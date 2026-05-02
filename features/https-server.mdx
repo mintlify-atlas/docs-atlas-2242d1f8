@@ -1,0 +1,121 @@
+---
+title: "HTTPS inbound server with TLS and REALITY fallback support"
+description: "Run Xray as an HTTPS inbound on port 443 using VLESS or Trojan, with TLS fallbacks to your real web server for unrecognized connections."
+---
+
+luci-app-xray can act as a TLS termination server on port 443, accepting proxy connections using VLESS or Trojan while transparently falling back to your real web server for ordinary HTTPS traffic. This allows you to share a single port between your proxy and a legitimate web server, making the setup harder to detect and block.
+
+## Enabling the HTTPS server
+
+Set the following options in the `general` UCI section to enable the HTTPS inbound:
+
+| UCI option | Description |
+|---|---|
+| `web_server_enable` | Set to `1` to enable the HTTPS inbound |
+| `web_server_protocol` | Inbound protocol: `vless` or `trojan` |
+| `web_server_port` | Listening port (default: `443`) |
+| `web_server_address` | Address of the fallback web server (e.g., `127.0.0.1:8080`) |
+| `web_server_cert_file` | Path to the TLS certificate file |
+| `web_server_key_file` | Path to the TLS private key file |
+
+The inbound uses `alpn: ["http/1.1"]` in its TLS settings, which means it presents a standard HTTPS fingerprint to the network.
+
+## Protocol-specific configuration
+
+<Tabs>
+  <Tab title="VLESS inbound">
+    When `web_server_protocol` is `vless`, the inbound authenticates clients by UUID. You can optionally specify per-protocol certificate files that override the global `web_server_cert_file` and `web_server_key_file`.
+
+    | UCI option | Description |
+    |---|---|
+    | `web_server_password` | List of UUIDs for authenticated VLESS clients |
+    | `vless_decryption` | Always `none` |
+    | `vless_tls` | TLS mode for the inbound: `tls` or `reality` |
+    | `vless_flow_tls` | Flow when using TLS (e.g., `xtls-rprx-vision`) |
+    | `vless_flow_reality` | Flow when using REALITY (e.g., `xtls-rprx-vision`) |
+    | `vless_tls_cert_file` | Override certificate file for the VLESS inbound |
+    | `vless_tls_key_file` | Override key file for the VLESS inbound |
+  </Tab>
+  <Tab title="Trojan inbound">
+    When `web_server_protocol` is `trojan`, the inbound authenticates clients by password. Trojan always uses TLS and does not support REALITY.
+
+    | UCI option | Description |
+    |---|---|
+    | `web_server_password` | List of passwords for authenticated Trojan clients |
+    | `trojan_tls` | Always `tls` |
+    | `trojan_tls_cert_file` | Override certificate file for the Trojan inbound |
+    | `trojan_tls_key_file` | Override key file for the Trojan inbound |
+  </Tab>
+</Tabs>
+
+## TLS fallback configuration
+
+When a connection arrives on port 443 that does not match the proxy protocol, Xray can forward it to a different backend based on ALPN, SNI, or path. This lets you serve a real website on the same port.
+
+Fallbacks are configured using UCI sections of type `fallback`. A final catch-all fallback is always added automatically, pointing to `web_server_address`.
+
+| UCI option | Description |
+|---|---|
+| `dest` | Backend address to forward non-matching connections to (e.g., `127.0.0.1:8080`) |
+| `alpn` | ALPN value to match (e.g., `h2` or `http/1.1`); leave empty to match any |
+| `name` | SNI value to match; leave empty to match any |
+| `path` | Path prefix to match; leave empty to match any |
+| `xver` | PROXY protocol version to prepend: `0` (none), `1`, or `2` |
+
+<Note>
+Fallback rules are evaluated in order. The first matching rule wins. The automatic catch-all fallback to `web_server_address` is always appended last.
+</Note>
+
+## REALITY inbound (advanced)
+
+For the VLESS inbound, you can use REALITY instead of standard TLS. REALITY makes the TLS handshake indistinguishable from a real connection to a chosen target server.
+
+| UCI option | Description |
+|---|---|
+| `vless_reality_dest` | The real server to impersonate (e.g., `www.microsoft.com:443`) |
+| `vless_reality_server_names` | List of SNI values the inbound will accept |
+| `vless_reality_private_key` | REALITY server private key |
+| `vless_reality_short_ids` | List of short IDs for client authentication |
+| `vless_reality_min_client_ver` | Minimum Xray client version (optional) |
+| `vless_reality_max_client_ver` | Maximum Xray client version (optional) |
+| `vless_reality_max_time_diff` | Maximum allowed clock difference in milliseconds (optional) |
+| `vless_reality_xver` | PROXY protocol version (optional) |
+| `vless_reality_show` | Set to `1` to enable REALITY debug logging |
+
+<Warning>
+When using REALITY, fallback is not applicable. REALITY handles unrecognized connections by forwarding them to the impersonated destination transparently.
+</Warning>
+
+## UCI example: Trojan HTTPS server with fallback
+
+```text UCI
+config general 'main'
+    option web_server_enable '1'
+    option web_server_protocol 'trojan'
+    option web_server_port '443'
+    option web_server_address '127.0.0.1:8080'
+    option web_server_cert_file '/etc/xray/fullchain.pem'
+    option web_server_key_file '/etc/xray/privkey.pem'
+    list web_server_password 'secret-password-1'
+    list web_server_password 'secret-password-2'
+    option trojan_tls 'tls'
+    # ... other general settings
+
+# Fallback for HTTP/2 ALPN — forward to a separate backend
+config fallback 'h2_fallback'
+    option alpn 'h2'
+    option dest '127.0.0.1:8443'
+    option xver '0'
+
+# Fallback for a specific path — forward to a different service
+config fallback 'api_fallback'
+    option path '/api'
+    option dest '127.0.0.1:3000'
+    option xver '0'
+```
+
+In this example:
+- Trojan clients authenticated with a password receive proxy service.
+- Connections with `h2` ALPN are forwarded to `127.0.0.1:8443`.
+- Connections to paths beginning with `/api` are forwarded to `127.0.0.1:3000`.
+- All remaining connections fall through to the real web server at `127.0.0.1:8080`.

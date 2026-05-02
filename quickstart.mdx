@@ -1,81 +1,124 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Get Xray running as a transparent proxy on OpenWrt"
+description: "Step-by-step guide to configuring your first proxy server in luci-app-xray and enabling transparent proxying for your entire LAN network."
 ---
 
-## Get started in three steps
+This guide walks you through the minimum configuration needed to get luci-app-xray intercepting LAN traffic and routing it through a proxy server. By the end, all devices on your LAN will have their TCP and UDP traffic routed through Xray without any per-device configuration.
 
-Get your documentation site running locally and make your first customization.
+<Note>
+  Make sure you have the geodata asset files installed before starting. Without them, geoip and geosite routing rules will not work and Xray may log warnings at startup.
 
-### Step 1: Set up your local environment
+  ```bash
+  opkg update && opkg install v2ray-geoip v2ray-geosite
+  ```
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Prerequisites
 
-### Step 2: Deploy your changes
+Before you begin, verify that the following packages are installed on your router:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash
+opkg install xray-core v2ray-geoip v2ray-geosite dnsmasq
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+You also need `kmod-nft-tproxy` and `ca-bundle`:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```bash
+opkg install kmod-nft-tproxy ca-bundle
+```
 
-### Step 3: Go live
+firewall4 must be active. On OpenWrt 22.03 and later this is the default firewall manager.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Configuration steps
+
+<Steps>
+  <Step title="Open the Xray configuration page">
+    In the LuCI web interface, navigate to **Services → Xray**. This is the main configuration page provided by luci-app-xray.
+
+    If the menu entry is missing, make sure the `luci-app-xray` package is installed and run `opkg install luci-app-xray` if needed. You may also need to clear the LuCI cache:
+
+    ```bash
+    rm -rf /tmp/luci-indexcache* /tmp/luci-modulecache
+    ```
+  </Step>
+  <Step title="Add a proxy server">
+    Go to the **Servers** tab and click **Add**. Fill in the details for your proxy server:
+
+    - **Protocol** — Select your server's protocol: VMess, VLESS, Shadowsocks, Trojan, Hysteria, SOCKS, or HTTP.
+    - **Server address** — The hostname or IP address of your proxy server.
+    - **Server port** — The port your proxy server listens on.
+    - **Credentials** — UUID/password and any protocol-specific options (encryption method, flow, etc.).
+
+    Click **Save** when done. The server entry will appear in the Servers list.
+  </Step>
+  <Step title="Enable transparent proxy and select LAN interfaces">
+    Go to the **General Settings** tab and enable **Transparent Proxy**.
+
+    In the **tproxy_ifaces_v4** field, select the LAN bridge interface — typically `br-lan`. This tells luci-app-xray which interfaces to intercept traffic on.
+
+    Set **tcp_balancer_v4** and **udp_balancer_v4** to the server you just added. These fields control which proxy server handles intercepted TCP and UDP traffic respectively.
+  </Step>
+  <Step title="Configure DNS">
+    Still on **General Settings**, configure the DNS settings:
+
+    - **fast_dns** — A local or regional DNS server for resolving direct domains quickly. For example, use `223.5.5.5:53` (Alibaba DNS) or `119.29.29.29:53` (Tencent DNS).
+    - **secure_dns** — A trusted DNS server whose queries are routed through your proxy to avoid DNS pollution. For example, use `8.8.8.8:53` (Google DNS) or `1.1.1.1:53` (Cloudflare DNS).
+    - **default_dns** — Optional. Used as a fallback when neither fast nor secure DNS applies.
+
+    luci-app-xray integrates with dnsmasq. When transparent proxy is enabled, dnsmasq is configured to forward domain queries to Xray's built-in DNS server, which then uses the fast/secure/default DNS servers according to your routing rules.
+
+    <Tip>
+      Use FakeDNS rather than sniffing for domain-based routing. FakeDNS is more reliable and avoids compatibility issues with certain protocols. Enable it in **General Settings** under the DNS section. Sniffing is deprecated in the main app and may be removed in a future version.
+    </Tip>
+  </Step>
+  <Step title="Save and apply">
+    Click **Save & Apply** at the bottom of the page. luci-app-xray will:
+
+    1. Write the UCI configuration to `/etc/config/xray_core`
+    2. Generate an Xray JSON configuration file
+    3. Set up dnsmasq integration
+    4. Apply nftables transparent proxy rules via firewall4
+    5. Start (or restart) the Xray process via procd
+
+    If the service does not start automatically after saving, restart it manually:
+
+    ```bash
+    /etc/init.d/xray_core restart
+    ```
+  </Step>
+  <Step title="Verify Xray is running">
+    To confirm that transparent proxying is active:
+
+    - Navigate to **Services → Xray** and check the status indicator at the top of the page.
+    - If you have installed `luci-app-xray-status`, go to **Services → Xray Status** for real-time metrics and connection details.
+    - From the router's command line, check the process:
+
+      ```bash
+      /etc/init.d/xray_core status
+      ```
+
+    - Test from a LAN device by visiting a site that would normally be blocked or slow without a proxy. If routing is working, you should see the expected behavior.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+If traffic is not being proxied after completing the steps above:
+
+- Check the system log for errors: `logread | grep xray`
+- Make sure `kmod-nft-tproxy` is loaded: `lsmod | grep nft_tproxy`
+- Verify the Xray config was generated: `cat /var/etc/xray/config.json`
+- Confirm firewall rules are active: `nft list ruleset | grep xray`
+
+If you see a warning about missing geoip or geosite files, install them with `opkg install v2ray-geoip v2ray-geosite` and restart the service.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="DNS configuration" icon="server" href="/configuration/dns">
+    Learn how to configure multi-tier DNS with fast, secure, and default servers, and how FakeDNS works.
+  </Card>
+  <Card title="Access control" icon="shield-halved" href="/features/access-control">
+    Set per-device policies so specific LAN hosts bypass the proxy or use different servers.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

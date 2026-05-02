@@ -1,0 +1,94 @@
+---
+title: "Geodata: browsing and using GeoIP and GeoSite"
+description: "Install geodata asset files, browse their contents with the geodata viewer, and use GeoIP and GeoSite rules to control routing and DNS."
+---
+
+Xray uses two binary asset files — `geoip.dat` and `geosite.dat` — to match IP addresses and domain names against named geographic or categorical groups. luci-app-xray integrates these files into routing rules and DNS configuration, and the optional `luci-app-xray-geodata` package adds a browser page so you can inspect their contents directly from LuCI.
+
+## Installing the geodata packages
+
+<Steps>
+  <Step title="Install asset files">
+    The asset files are distributed as separate OpenWrt packages. Install them with:
+
+    ```bash
+    opkg update && opkg install v2ray-geoip v2ray-geosite
+    ```
+
+    The files are placed at:
+    - `/usr/share/xray/geoip.dat`
+    - `/usr/share/xray/geosite.dat`
+
+    <Warning>
+      If either file is missing, Xray logs the following warning at startup and GeoIP/GeoSite routing rules are silently skipped:
+
+      ```text
+      WARNING: at least one of asset files (geoip.dat, geosite.dat) is not found under /usr/share/xray.
+      ```
+
+      If `opkg install` fails, see [issue #52](https://github.com/yichya/luci-app-xray/issues/52#issuecomment-856059905) for alternative approaches.
+    </Warning>
+  </Step>
+  <Step title="Install the geodata viewer (optional)">
+    The `luci-app-xray-geodata` package adds a browser page for inspecting the contents of both asset files. It depends on `luci-app-xray` and `xray-geodata`.
+
+    ```bash
+    opkg install luci-app-xray-geodata
+    ```
+
+    After installation, navigate to **Services → Xray → Geodata** to search and browse entries in `geoip.dat` and `geosite.dat`.
+  </Step>
+</Steps>
+
+## Using GeoSite in domain rules
+
+GeoSite tags can be used in any domain rule field: **Blocked domain rules**, **Bypassed domain rules**, and **Forwarded domain rules**.
+
+| Tag | Contents |
+|---|---|
+| `geosite:cn` | Chinese domain list |
+| `geosite:geolocation-!cn` | Non-Chinese geolocated domains |
+| `geosite:category-ads` | Known advertising domains |
+
+To reference a custom dat file, use the `ext:` syntax:
+
+```text
+ext:filename.dat:tag
+```
+
+<Note>
+GeoSite rules are silently ignored if `geosite.dat` is not present at `/usr/share/xray/geosite.dat`. No error is shown in the UI; the rule is simply omitted from the generated config.
+</Note>
+
+## Using GeoIP in routing rules
+
+GeoIP codes are used in the **GeoIP direct code list** fields (`geoip_direct_code_list` and `geoip_direct_code_list_v6`). Traffic matching these codes is routed directly, bypassing the proxy.
+
+Enter bare country codes or full `geoip:` prefixed tags. The config generator automatically prepends `geoip:` to bare codes:
+
+```text
+cn              → geoip:cn
+geoip:private   → geoip:private (passed through unchanged)
+ext:custom.dat:mytag → ext:custom.dat:mytag (passed through unchanged)
+```
+
+The `geoip:private` tag (RFC 1918 and loopback ranges) is always routed directly when `geoip.dat` is present, regardless of your direct code list.
+
+<Note>
+GeoIP rules are only added to the generated configuration when `geoip.dat` exists at `/usr/share/xray/geoip.dat`. If the file is absent, all GeoIP routing rules — including the automatic `geoip:private` rule — are omitted.
+</Note>
+
+## GeoIP in manual transparent proxy entries
+
+Since version 3.6.0, manual transparent proxy entries support GeoIP for source address matching. You can restrict a manual TProxy rule to traffic originating from a specific GeoIP range by entering a GeoIP code in the source address field of the entry.
+
+## Custom geodata files
+
+You can use geodata files other than the bundled `geoip.dat` and `geosite.dat` by placing them in `/usr/share/xray/` and referencing them with the `ext:` prefix in rule fields:
+
+```text
+ext:mycompany-ip.dat:internal
+ext:mysite-list.dat:blocked
+```
+
+The filename is relative to `/usr/share/xray/`. The tag identifies the specific list within that file.

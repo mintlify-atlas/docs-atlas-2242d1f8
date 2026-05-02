@@ -1,0 +1,96 @@
+---
+title: "luci-app-xray changelog since 3.0.0"
+description: "Chronological record of every feature, fix, and maintenance change in luci-app-xray from version 3.0.0 through the current 3.7.1 release."
+---
+
+This page lists every change to luci-app-xray from version 3.0.0 onward, grouped by the release series in which each change appeared. The project is under active development; the current stable release is **3.7.1**.
+
+<Note>
+  luci-app-xray follows a continuous development model. Changes are merged to the main branch and tagged when a version milestone is reached. The entries below reflect the commit history as documented in the README.
+</Note>
+
+## Version 3.7.x (current)
+
+**Current release: 3.7.1**
+
+- `2026-01-26` **fix:** typos and hysteria version check
+- `2026-01-14` **chore:** bump version
+
+## Since 3.6.0
+
+- `2026-01-14` **feat:** hysteria outbound
+- `2026-01-13` **feat:** vless encryption; minor DNS tweaks; code cleanups
+- `2025-08-26` **fix:** dnsmasq global integration mode
+- `2025-08-20` **fix:** dynamic direct connection tracking
+- `2025-07-27` **fix:** dynamic direct — only cover global servers; increase default timeout
+- `2025-07-24` **fix:** geosite browser search
+- `2025-07-20` **feat:** geoip in manual transparent proxy
+- `2025-05-13` **feat:** geodata reader
+
+## Since 3.5.0
+
+- `2025-01-05` **fix:** direct output; remove unused check of geoip direct list
+- `2024-11-27` **chore:** use OpenWrt SDK 23.05.5 to avoid using apk
+- `2024-11-26` **chore:** bump status version
+
+## Since 3.4.0
+
+- `2024-11-26` **feat:** httpupgrade support; avoid overriding mark
+- `2024-11-25` **feat:** basic splithttp support
+- `2024-11-22` **fix:** dnsmasq jail adaptation; firewall improvements
+- `2024-07-26` **chore:** minor code and style fixes
+- `2024-06-26` **feat:** support `ext:` prefix in geoip direct codes
+- `2024-05-03` **fix:** REALITY deserialization issue
+- `2024-04-23` **fix:** use zstd for OpenWrt SDK decompression
+- `2024-03-17` **fix:** add ACL for version info
+- `2024-03-14` **feat:** add version info display in status
+- `2024-03-11` **feat:** `expectIPs` for outbound domain resolving; restart on dnsmasq config change
+- `2024-03-08` **feat:** multiple ports for one outbound
+- `2024-02-27` **fix:** block requests when leastPing is not ready
+- `2024-02-23` **chore:** bump version to 3.4.1
+- `2024-02-20` **fix:** domain match priority; stricter resolve options; SOCKS/HTTP auth
+- `2024-02-19` **fix:** several DNS-related validation issues
+- `2024-02-18` **chore:** optimize code style; bump version
+
+## Since 3.3.0
+
+- `2024-02-17` **feat:** add username/password for extra SOCKS/HTTP inbound
+- `2024-02-16` **feat:** DNS hijacking preview; deprecate global HTTP/SOCKS inbound
+- `2024-02-04` **fix:** avoid firewall restart failure and minor adjustments
+- `2024-01-24` **feat:** add alias to LAN Hosts Access Control
+- `2024-01-19` **chore:** bump version
+
+## Since 3.2.0
+
+- `2024-01-19` **feat:** SOCKS/HTTP outbound
+- `2024-01-18` **feat:** make **Resolve Domain via DNS** available to all outbounds
+- `2024-01-04` **chore:** start later than sysntpd; change firewall include file path
+- `2023-12-22` **chore:** optimize list folded format; add roundRobin balancer
+- `2023-12-20` **chore:** bump version
+
+## Since 3.1.0
+
+- `2023-12-20` **chore:** deprecate sniffing; move some preview features to main app; add custom configuration hook; refactor web files
+- `2023-12-14` **fix:** default gateway
+- `2023-11-30` **fix:** dialer proxy tag
+- `2023-11-02` **feat:** specify DNS to resolve outbound server name
+- `2023-11-01` **feat:** custom configuration hook
+- `2023-10-31` **chore:** bump version to 3.1.1
+- `2023-10-30` **fix:** blocked as NXDOMAIN for IPv6
+- `2023-10-26` **fix:** allow empty selection for extra inbound outbound balancer
+- `2023-10-25` **fix:** set required for some fields; remove unused code
+- `2023-10-24` **chore:** bump version
+
+## Since 3.0.0
+
+- `2023-10-20` **feat:** better network interface control
+
+  <Warning>
+    This change requires you to reselect your LAN interfaces in **Xray (preview)** → **LAN Hosts Access Control**.
+  </Warning>
+
+- `2023-10-19` **feat:** detailed status page via metrics
+- `2023-10-06` **chore:** code cleanup
+- `2023-10-01` **fix:** default configuration
+- `2023-09-27` **fix:** sniffing `inboundTag`; fix `upstream_domain_names`
+- `2023-09-26` Version 3.0.0 — merge master

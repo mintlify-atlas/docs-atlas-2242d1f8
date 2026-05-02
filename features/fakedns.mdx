@@ -1,0 +1,100 @@
+---
+title: "FakeDNS: domain-based transparent proxy traffic routing"
+description: "Use FakeDNS to route traffic by domain name without protocol sniffing. The recommended approach for reliable transparent proxying on OpenWrt with Xray."
+---
+
+FakeDNS is the recommended mechanism for domain-based traffic routing in luci-app-xray. When a DNS query matches a configured domain pattern, Xray returns a fake IP address drawn from a reserved pool. The router's nftables rules then intercept any traffic destined for those fake IPs and redirect it through Xray, which looks up the original domain name to make the real connection.
+
+## How it works
+
+<Steps>
+  <Step title="DNS query intercepted">
+    A LAN device queries DNS for a domain that matches a `fakedns` section's `fake_dns_domain_names` list. Xray's internal DNS resolver handles the query using the `fakedns://` address.
+  </Step>
+  <Step title="Fake IP returned">
+    Xray assigns a fake IP from the configured pool (`198.18.0.0/15` for IPv4, `fc00::/18` for IPv6) and returns it to the client.
+  </Step>
+  <Step title="Traffic intercepted by nftables">
+    When the client opens a connection to the fake IP, nftables intercepts it with a tproxy rule and redirects it to the FakeDNS-specific tproxy ports (1086/1087 for TCP, 1088/1089 for UDP).
+  </Step>
+  <Step title="Real connection established">
+    Xray looks up the original domain name associated with the fake IP and forwards the connection through the configured forward servers.
+  </Step>
+</Steps>
+
+The nftables rules that implement step 3 look like this:
+
+```text nftables (generated)
+# IPv4 FakeDNS pool — TCP and UDP
+ip protocol tcp ip daddr 198.18.0.0/15 tproxy ip to :1086 accept
+ip protocol udp ip daddr 198.18.0.0/15 tproxy ip to :1088 accept
+
+# IPv6 FakeDNS pool — TCP and UDP
+ip6 nexthdr tcp ip6 daddr fc00::/18 tproxy ip6 to :1087 accept
+ip6 nexthdr udp ip6 daddr fc00::/18 tproxy ip6 to :1089 accept
+```
+
+## Configuration
+
+FakeDNS is configured using UCI sections of type `fakedns`. You can define multiple sections to route different domain sets through different servers.
+
+**Per-`fakedns` section options:**
+
+| UCI option | Description |
+|---|---|
+| `fake_dns_domain_names` | List of domain patterns to intercept (e.g., `geosite:geolocation-!cn`) |
+| `fake_dns_forward_server_tcp` | UCI section name(s) of the server(s) to handle TCP connections for matched domains |
+| `fake_dns_forward_server_udp` | UCI section name(s) of the server(s) to handle UDP connections for matched domains |
+| `fake_dns_balancer_strategy` | Balancer strategy when multiple forward servers are specified (`random` by default) |
+
+**In the `general` section (global FakeDNS pool settings):**
+
+| UCI option | Description |
+|---|---|
+| `pool_v4` | IPv4 fake IP pool CIDR (default: `198.18.0.0/15`) |
+| `pool_v4_size` | Number of IPs to allocate from the IPv4 pool (default: `65535`) |
+| `pool_v6` | IPv6 fake IP pool CIDR (default: `fc00::/18`) |
+| `pool_v6_size` | Number of IPs to allocate from the IPv6 pool (default: `65535`) |
+
+<Note>
+The IP pools (`pool_v4`, `pool_v6`, `pool_v4_size`, `pool_v6_size`) are configured in the `general` UCI section and shared across all `fakedns` sections. The ranges `198.18.0.0/15` and `fc00::/18` are reserved addresses that will not conflict with real internet traffic.
+</Note>
+
+## FakeDNS vs protocol sniffing
+
+Protocol sniffing — where Xray parses connection payloads to extract domain names — is the older approach to domain-based routing.
+
+<Tip>
+FakeDNS is preferred over protocol sniffing. It works for all protocols without parsing overhead, is more reliable, and handles protocols that do not transmit the domain name in-band (such as custom UDP protocols). Protocol sniffing (`tproxy_sniffing`) is deprecated in luci-app-xray.
+</Tip>
+
+| | FakeDNS | Sniffing |
+|---|---|---|
+| Reliability | High — intercepts at DNS level | Moderate — depends on protocol |
+| Protocol support | All TCP/UDP protocols | HTTP, TLS, QUIC only |
+| Overhead | Minimal | Payload parsing per connection |
+| Recommended | Yes | No (deprecated) |
+
+## UCI example
+
+```text UCI
+config general 'main'
+    option pool_v4 '198.18.0.0/15'
+    option pool_v6 'fc00::/18'
+    # ... other general settings
+
+config fakedns 'proxy_domains'
+    list fake_dns_domain_names 'geosite:geolocation-!cn'
+    list fake_dns_domain_names 'domain:example.com'
+    option fake_dns_forward_server_tcp 'my_server'
+    option fake_dns_forward_server_udp 'my_server'
+    option fake_dns_balancer_strategy 'random'
+
+config fakedns 'streaming_domains'
+    list fake_dns_domain_names 'geosite:netflix'
+    list fake_dns_domain_names 'geosite:disney'
+    option fake_dns_forward_server_tcp 'streaming_server'
+    option fake_dns_forward_server_udp 'streaming_server'
+```
+
+In this example, traffic to non-Chinese domains is routed through `my_server`, while Netflix and Disney traffic is routed through a separate `streaming_server`.

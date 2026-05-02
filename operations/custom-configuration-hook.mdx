@@ -1,0 +1,133 @@
+---
+title: "Custom configuration hook for Xray JSON"
+description: "Use a ucode function to programmatically modify the generated Xray config object, adding rules or features not available in the LuCI UI."
+---
+
+The custom configuration hook lets you intercept the Xray JSON configuration object just before it is written to disk, so you can add, remove, or modify any part of it without giving up the convenience of the LuCI interface. The hook is a small ucode (MicroScript) function that receives the fully assembled config and must return the config — modified or unmodified.
+
+## How it works
+
+During startup, `gen_config.uc` builds the complete Xray configuration from your UCI settings and then runs your hook as the final step before serialising the result to `/var/etc/xray/config.json`:
+
+```javascript
+const custom_configuration_hook = loadstring(
+    general["custom_configuration_hook"] || "return i => i;"
+)();
+
+return custom_configuration_hook({
+    inbounds:   inbounds(general, config, extra_inbound),
+    outbounds:  outbounds(general, config, manual_tproxy, bridge, extra_inbound, fakedns),
+    dns:        dns_conf(general, config, manual_tproxy, fakedns),
+    fakedns:    fake_dns_conf(general),
+    api:        api_conf(general),
+    metrics:    metrics_conf(general),
+    policy:     policy(general),
+    log:        logging(general),
+    stats:      general["stats"] == "1" ? { place: "holder" } : null,
+    observatory: observatory(general, manual_tproxy),
+    routing:    { ... }
+});
+```
+
+The default hook (`return i => i;`) is a no-op identity function. Replace it with your own function to modify the config object.
+
+## Setting the hook
+
+Set the `custom_configuration_hook` option in the `general` UCI section. The value is a string containing a ucode expression that evaluates to a function:
+
+```bash
+uci set xray_core.@general[0].custom_configuration_hook='return (config) => {
+    // modify config here
+    return config;
+};'
+uci commit xray_core
+/etc/init.d/xray_core restart
+```
+
+The function must:
+- Accept the config object as its single argument
+- Return the config object (whether modified or not)
+
+## Examples
+
+### Add a custom inbound
+
+```javascript
+return (config) => {
+    config.inbounds.push({
+        protocol: "dokodemo-door",
+        listen: "127.0.0.1",
+        port: 4000,
+        settings: {
+            address: "1.1.1.1",
+            port: 53,
+            network: "udp"
+        },
+        tag: "custom_dns_inbound"
+    });
+    return config;
+};
+```
+
+### Override the log level
+
+```javascript
+return (config) => {
+    config.log.loglevel = "info";
+    return config;
+};
+```
+
+### Add a custom routing rule
+
+```javascript
+return (config) => {
+    config.routing.rules.unshift({
+        type: "field",
+        inboundTag: ["tproxy_tcp_inbound_v4"],
+        outboundTag: "direct",
+        domain: ["domain:internal.example.com"]
+    });
+    return config;
+};
+```
+
+### Modify DNS configuration
+
+```javascript
+return (config) => {
+    config.dns.servers.push({
+        address: "10.0.0.53",
+        domains: ["domain:corp.example.com"],
+        expectIPs: ["10.0.0.0/8"]
+    });
+    return config;
+};
+```
+
+## Common use cases
+
+<AccordionGroup>
+  <Accordion title="Add inbounds not supported by the UI">
+    Push additional objects into `config.inbounds`. Make sure to add a corresponding routing rule in `config.routing.rules` so Xray knows what to do with traffic that arrives on your new inbound.
+  </Accordion>
+  <Accordion title="Override outbound settings">
+    Iterate over `config.outbounds` to find the outbound by its `tag` and mutate its properties directly.
+  </Accordion>
+  <Accordion title="Add routing rules not available in the UI">
+    Use `config.routing.rules.unshift()` to prepend high-priority rules, or `push()` to append lower-priority ones. Rules are evaluated in order.
+  </Accordion>
+  <Accordion title="Enable observatory for leastPing balancing">
+    Set `config.observatory` to the observatory object if you need to configure it more precisely than the UCI option allows.
+  </Accordion>
+</AccordionGroup>
+
+## Deprecated alternatives
+
+<Warning>
+**Global custom settings** (the `custom_config` UCI option) are deprecated and will be removed in version 4.0.0. Migrate any existing global custom config to the `custom_configuration_hook` instead.
+</Warning>
+
+<Warning>
+**Global sniffing settings** are deprecated and have been moved to the preview app (**Services → Xray (preview)**). Use FakeDNS instead of sniffing to route traffic based on domain names. See [Enable preview app](/operations/troubleshooting) for instructions on accessing preview features.
+</Warning>

@@ -1,0 +1,269 @@
+---
+title: "Configuring upstream proxy servers in luci-app-xray"
+description: "Define VMess, VLESS, Shadowsocks, Trojan, HTTP, SOCKS, and Hysteria upstream servers as UCI sections for use as outbound proxy targets."
+---
+
+Each upstream proxy endpoint you want Xray to connect through is defined as a separate `servers` UCI section. You can have as many server sections as you like and reference them by name from balancers, extra inbounds, or FakeDNS rules. The protocol-specific fields you populate depend on the value of `protocol`.
+
+## Common fields
+
+These fields apply to every server section regardless of protocol.
+
+<ParamField path="protocol" type="string" required>
+  The outbound proxy protocol. Accepted values: `vmess`, `vless`, `shadowsocks`, `trojan`, `http`, `socks`, `hysteria`.
+</ParamField>
+
+<ParamField path="server" type="string" required>
+  Hostname or IP address of the upstream server.
+</ParamField>
+
+<ParamField path="server_port" type="number" required>
+  Port number on the upstream server. Accepts a single port or a list of ports for multi-port configurations.
+</ParamField>
+
+<ParamField path="custom_config" type="string">
+  A JSON string that is deep-merged over the generated outbound object. Use this to inject fields not exposed by the UCI schema, such as non-standard `streamSettings` options.
+</ParamField>
+
+## Transport and TLS
+
+Transport settings (network layer, TLS, REALITY) are configured via shared UCI options that the stream settings generator in `common/stream.mjs` reads. The prefix is the protocol name.
+
+<AccordionGroup>
+  <Accordion title="Transport options">
+
+| Option | Description |
+|--------|-------------|
+| `transport` | Network transport: `tcp`, `ws`, `h2`, `grpc`, `mkcp`, `quic`, `splithttp`, `httpupgrade`, `hysteria` |
+| `<protocol>_tls` | TLS mode: `none`, `tls`, `reality` |
+| `tcp_guise` | TCP header obfuscation: `none` or `http` |
+| `ws_path` / `ws_host` | WebSocket path and `Host` header |
+| `h2_path` / `h2_host` | HTTP/2 path and authority |
+| `grpc_service_name` | gRPC service name |
+| `mkcp_guise` | mKCP header type: `none`, `srtp`, `utp`, `wechat-video`, `dtls`, `wireguard` |
+
+  </Accordion>
+  <Accordion title="TLS options">
+
+| Option | Description |
+|--------|-------------|
+| `<protocol>_tls_host` | SNI server name sent in the TLS handshake |
+| `<protocol>_tls_insecure` | Set to `0` to reject invalid certificates (default allows insecure) |
+| `<protocol>_tls_fingerprint` | uTLS fingerprint (`chrome`, `firefox`, `safari`, etc.) |
+| `<protocol>_tls_alpn` | List of ALPN protocols |
+| `<protocol>_reality_public_key` | REALITY server public key |
+| `<protocol>_reality_short_id` | REALITY short ID |
+| `<protocol>_reality_server_name` | REALITY SNI |
+| `<protocol>_reality_fingerprint` | uTLS fingerprint for REALITY |
+| `<protocol>_reality_spider_x` | SpiderX path for additional anti-detection |
+
+  </Accordion>
+</AccordionGroup>
+
+## Protocol-specific fields
+
+<Tabs>
+  <Tab title="VMess">
+
+<ParamField path="password" type="string" required>
+  User UUID for VMess authentication.
+</ParamField>
+
+<ParamField path="alter_id" type="number" default="0">
+  VMess alter ID. Must be `0` for AEAD (modern VMess). Legacy servers may require a non-zero value.
+</ParamField>
+
+<ParamField path="vmess_security" type="string" default="auto">
+  Encryption method. Typically left as `auto`. Other options: `aes-128-gcm`, `chacha20-poly1305`, `none`.
+</ParamField>
+
+  </Tab>
+  <Tab title="VLESS">
+
+<ParamField path="password" type="string" required>
+  User UUID for VLESS authentication.
+</ParamField>
+
+<ParamField path="vless_encryption" type="string" default="none">
+  Encryption method. VLESS itself is unencrypted; this is always `none`.
+</ParamField>
+
+<ParamField path="vless_flow_tls" type="string">
+  Flow control when using TLS. Use `xtls-rprx-vision` for XTLS Vision.
+</ParamField>
+
+<ParamField path="vless_flow_reality" type="string">
+  Flow control when using REALITY. Use `xtls-rprx-vision` for XTLS Vision.
+</ParamField>
+
+  </Tab>
+  <Tab title="Shadowsocks">
+
+<ParamField path="password" type="string" required>
+  Shadowsocks password.
+</ParamField>
+
+<ParamField path="shadowsocks_security" type="string" required>
+  Encryption cipher. Recommended modern methods: `chacha20-ietf-poly1305`, `aes-256-gcm`, `aes-128-gcm`, `2022-blake3-aes-256-gcm`.
+</ParamField>
+
+  </Tab>
+  <Tab title="Trojan">
+
+<ParamField path="password" type="string" required>
+  Trojan password.
+</ParamField>
+
+  </Tab>
+  <Tab title="HTTP">
+
+<ParamField path="username" type="string">
+  HTTP proxy username. Leave empty for unauthenticated proxies.
+</ParamField>
+
+<ParamField path="password" type="string">
+  HTTP proxy password.
+</ParamField>
+
+  </Tab>
+  <Tab title="SOCKS">
+
+<ParamField path="username" type="string">
+  SOCKS5 username. Leave empty for unauthenticated proxies.
+</ParamField>
+
+<ParamField path="password" type="string">
+  SOCKS5 password.
+</ParamField>
+
+  </Tab>
+  <Tab title="Hysteria">
+
+<ParamField path="password" type="string" required>
+  Hysteria v2 authentication credential.
+</ParamField>
+
+<ParamField path="hysteria_up_mbps" type="number">
+  Upload bandwidth limit in Mbps. Leave empty to use the server default.
+</ParamField>
+
+<ParamField path="hysteria_down_mbps" type="number">
+  Download bandwidth limit in Mbps.
+</ParamField>
+
+<ParamField path="hysteria_udphop_port" type="string">
+  Port range for UDP hopping (e.g. `20000-30000`). When set, Xray cycles through the range to evade UDP blocking.
+</ParamField>
+
+<ParamField path="hysteria_udphop_interval" type="number" default="30">
+  How often (in seconds) to hop to the next UDP port.
+</ParamField>
+
+  </Tab>
+</Tabs>
+
+## Dialer proxy (chaining)
+
+<ParamField path="dialer_proxy" type="string">
+  Name of another `servers` UCI section to chain through. When set, traffic to this server is sent via the specified intermediate server first. Set to `disabled` (or leave unset) to connect directly.
+</ParamField>
+
+<Note>
+  Chaining is recursive: the intermediate server can itself have a `dialer_proxy`, creating multi-hop proxy chains.
+</Note>
+
+## Domain resolution
+
+These options control how Xray resolves the `server` hostname before connecting. They are only relevant when `server` is a domain name rather than an IP address.
+
+<ParamField path="domain_resolve_dns" type="string">
+  DNS server address (host or host:port) used to resolve this server's hostname. When set, a dedicated DNS entry is added for this domain.
+</ParamField>
+
+<ParamField path="domain_resolve_dns_method" type="string" default="udp">
+  DNS transport method for resolving this server's hostname.
+
+  | Value | Description |
+  |-------|-------------|
+  | `udp` | Plain UDP DNS |
+  | `tcp` | DNS over TCP |
+  | `https://...` | DNS over HTTPS (DoH) |
+  | `doq` | DNS over QUIC |
+  | `local` | System resolver |
+</ParamField>
+
+<ParamField path="domain_resolve_expect_ips" type="string[]">
+  Optional list of GeoIP codes or CIDR ranges that the resolved IP must match. If the DNS response does not contain a matching IP, it is discarded. Example: `geoip:us`.
+</ParamField>
+
+## Example configurations
+
+<Tabs>
+  <Tab title="VMess + WebSocket + TLS">
+
+```text xray_core (UCI)
+config servers 'my_vmess_server'
+    option protocol 'vmess'
+    option server 'example.com'
+    option server_port '443'
+    option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+    option alter_id '0'
+    option transport 'ws'
+    option ws_path '/path'
+    option ws_host 'example.com'
+    option vmess_tls 'tls'
+    option vmess_tls_host 'example.com'
+```
+
+  </Tab>
+  <Tab title="VLESS + REALITY">
+
+```text xray_core (UCI)
+config servers 'my_vless_reality'
+    option protocol 'vless'
+    option server '1.2.3.4'
+    option server_port '443'
+    option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+    option vless_encryption 'none'
+    option vless_flow_reality 'xtls-rprx-vision'
+    option transport 'tcp'
+    option vless_tls 'reality'
+    option vless_reality_public_key 'yourPublicKeyBase64Here'
+    option vless_reality_short_id 'abc12345'
+    option vless_reality_server_name 'www.microsoft.com'
+    option vless_reality_fingerprint 'chrome'
+```
+
+  </Tab>
+  <Tab title="Shadowsocks">
+
+```text xray_core (UCI)
+config servers 'my_ss_server'
+    option protocol 'shadowsocks'
+    option server 'ss.example.com'
+    option server_port '8388'
+    option password 'yourPassword'
+    option shadowsocks_security 'chacha20-ietf-poly1305'
+```
+
+  </Tab>
+  <Tab title="Hysteria v2">
+
+```text xray_core (UCI)
+config servers 'my_hysteria2'
+    option protocol 'hysteria'
+    option server 'hy2.example.com'
+    option server_port '443'
+    option password 'yourAuthString'
+    option hysteria_up_mbps '50'
+    option hysteria_down_mbps '200'
+    option hysteria_tls 'tls'
+    option hysteria_tls_server_name 'hy2.example.com'
+```
+
+  </Tab>
+</Tabs>
+
+<Warning>
+  Never commit server configuration files (including UCI configs containing passwords or UUIDs) to public version control.
+</Warning>

@@ -1,0 +1,302 @@
+---
+title: "General settings reference for luci-app-xray on OpenWrt"
+description: "Configure transparent proxy, balancers, routing, GeoIP rules, DNS, observability, and performance tuning in the UCI general section."
+---
+
+The `general` UCI section is the central configuration block for luci-app-xray. Every option you set here controls global proxy behaviour, routing policy, observability, and performance—covering everything from which LAN interfaces are intercepted to how long idle connections are held open.
+
+## Transparent proxy
+
+<ParamField path="transparent_proxy_enable" type="boolean" default="1">
+  Enable or disable the transparent proxy. Set to `1` to start intercepting traffic on the configured LAN interfaces, or `0` to disable.
+</ParamField>
+
+<ParamField path="tproxy_ifaces_v4" type="string[]">
+  List of IPv4 LAN interfaces whose traffic Xray intercepts. Typically `br-lan`. You can list multiple interfaces.
+</ParamField>
+
+<ParamField path="tproxy_ifaces_v6" type="string[]">
+  List of IPv6 LAN interfaces to intercept. Usually the same as `tproxy_ifaces_v4`.
+</ParamField>
+
+<ParamField path="bypass_ifaces_v4" type="string[]">
+  IPv4 interfaces that are excluded from proxying entirely. Traffic arriving on these interfaces passes through without Xray involvement.
+</ParamField>
+
+<ParamField path="bypass_ifaces_v6" type="string[]">
+  IPv6 interfaces excluded from proxying.
+</ParamField>
+
+## Balancers (outbound selection)
+
+Balancers determine which upstream server handles each traffic type. Each balancer accepts one or more server section names; when multiple servers are listed, the configured strategy is applied.
+
+<ParamField path="tcp_balancer_v4" type="string[]">
+  Server(s) used for TCP IPv4 traffic. References server UCI section names.
+</ParamField>
+
+<ParamField path="udp_balancer_v4" type="string[]">
+  Server(s) used for UDP IPv4 traffic.
+</ParamField>
+
+<ParamField path="tcp_balancer_v6" type="string[]">
+  Server(s) used for TCP IPv6 traffic.
+</ParamField>
+
+<ParamField path="udp_balancer_v6" type="string[]">
+  Server(s) used for UDP IPv6 traffic.
+</ParamField>
+
+<ParamField path="general_balancer_strategy" type="string" default="random">
+  Load balancing strategy applied to all built-in balancers.
+
+  | Value | Behaviour |
+  |-------|-----------|
+  | `random` | Pick a server at random each time |
+  | `roundRobin` | Cycle through servers in order |
+  | `leastPing` | Choose the server with the lowest observed latency (requires `observatory=1`) |
+</ParamField>
+
+<Note>
+  `leastPing` requires `observatory` to be enabled so that Xray can measure server latency. See the **Observability** section below.
+</Note>
+
+## Routing
+
+<ParamField path="routing_domain_strategy" type="string" default="AsIs">
+  Controls how Xray resolves domain names for routing decisions.
+
+  | Value | Behaviour |
+  |-------|-----------|
+  | `AsIs` | Route by domain name without resolving |
+  | `UseIP` | Resolve domain to IP, then route by IP |
+  | `UseIPv4` | Resolve and use IPv4 address only |
+  | `UseIPv6` | Resolve and use IPv6 address only |
+</ParamField>
+
+<ParamField path="direct_bittorrent" type="boolean" default="0">
+  When enabled, BitTorrent protocol traffic is sent directly without going through the proxy.
+</ParamField>
+
+<ParamField path="transparent_default_port_policy" type="string" default="forwarded">
+  Default handling for ports not explicitly listed in bypass or forward lists.
+
+  - `forwarded` — all ports are proxied by default; use `wan_bp_*_ports` to exclude specific ports.
+  - `bypassed` — all ports bypass the proxy by default; use `wan_fw_*_ports` to proxy specific ports.
+</ParamField>
+
+<ParamField path="wan_fw_tcp_ports" type="string[]">
+  TCP ports to force-forward through the proxy. Effective when `transparent_default_port_policy` is `bypassed`.
+</ParamField>
+
+<ParamField path="wan_fw_udp_ports" type="string[]">
+  UDP ports to force-forward through the proxy.
+</ParamField>
+
+<ParamField path="wan_bp_tcp_ports" type="string[]">
+  TCP ports to bypass the proxy. Effective when `transparent_default_port_policy` is `forwarded`.
+</ParamField>
+
+<ParamField path="wan_bp_udp_ports" type="string[]">
+  UDP ports to bypass the proxy.
+</ParamField>
+
+## GeoIP routing
+
+GeoIP rules let you route traffic to/from specific countries directly, block ad domains, or ensure certain domains always go through the proxy. These options require `/usr/share/xray/geoip.dat` and `/usr/share/xray/geosite.dat` to be present on the router.
+
+<ParamField path="geoip_direct_code_list" type="string[]">
+  GeoIP country codes whose IPv4 destinations are routed directly (bypassing the proxy). Example: `cn`.
+</ParamField>
+
+<ParamField path="geoip_direct_code_list_v6" type="string[]">
+  GeoIP country codes for direct IPv6 routing.
+</ParamField>
+
+<ParamField path="blocked_domain_rules" type="string[]">
+  Domain rules whose matching traffic is sent to the blackhole (dropped). Example: `geosite:category-ads`.
+</ParamField>
+
+<ParamField path="bypassed_domain_rules" type="string[]">
+  Domain rules routed directly without proxying. Example: `geosite:cn`.
+</ParamField>
+
+<ParamField path="forwarded_domain_rules" type="string[]">
+  Domain rules that are always proxied regardless of other policies. Example: `geosite:geolocation-!cn`.
+</ParamField>
+
+<Tip>
+  Domain rules (`blocked_domain_rules`, `bypassed_domain_rules`, `forwarded_domain_rules`) are used for DNS-based routing decisions and also in routing rules when sniffing is enabled. GeoIP direct rules work independently of sniffing. Use FakeDNS for reliable domain-based routing without relying on sniffing.
+</Tip>
+
+## Dynamic direct routing
+
+Dynamic direct caches IP addresses that have been observed going direct, reducing the overhead of routing decisions for repeat connections.
+
+<ParamField path="dynamic_direct_tcp4" type="boolean" default="0">
+  Enable dynamic direct caching for TCP IPv4 connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_tcp6" type="boolean" default="0">
+  Enable dynamic direct caching for TCP IPv6 connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp4" type="boolean" default="0">
+  Enable dynamic direct caching for UDP IPv4 connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp6" type="boolean" default="0">
+  Enable dynamic direct caching for UDP IPv6 connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_timeout" type="number" default="2233">
+  How long (in seconds) a dynamically learned direct IP address is cached in the nftables set before expiry.
+</ParamField>
+
+## Policy and performance
+
+These options map directly to Xray's `policy.levels["0"]` object.
+
+<ParamField path="handshake" type="number" default="4">
+  Time (in seconds) allowed for a connection handshake to complete before the connection is dropped.
+</ParamField>
+
+<ParamField path="conn_idle" type="number" default="300">
+  Idle timeout in seconds. Connections with no traffic for this duration are closed.
+</ParamField>
+
+<ParamField path="uplink_only" type="number" default="2">
+  After the downstream half of a connection closes, wait this many seconds before tearing down the whole connection.
+</ParamField>
+
+<ParamField path="downlink_only" type="number" default="5">
+  After the upstream half of a connection closes, wait this many seconds before closing.
+</ParamField>
+
+<ParamField path="buffer_size" type="number" default="4">
+  Internal buffer size in MB per connection. Increase for high-throughput scenarios.
+</ParamField>
+
+## Observability
+
+<ParamField path="xray_api" type="boolean" default="0">
+  Enable the Xray gRPC API on `127.0.0.1:8080`. Exposes `HandlerService`, `LoggerService`, and `StatsService`.
+</ParamField>
+
+<ParamField path="metrics_server_enable" type="boolean" default="0">
+  Enable a Prometheus-compatible metrics endpoint.
+</ParamField>
+
+<ParamField path="metrics_server_port" type="number" default="18888">
+  Port for the metrics server.
+</ParamField>
+
+<ParamField path="observatory" type="boolean" default="0">
+  Enable Xray's built-in observatory, which probes servers every 100 ms. Required for `leastPing` balancer strategy.
+</ParamField>
+
+<ParamField path="stats" type="boolean" default="0">
+  Enable per-inbound and per-outbound traffic statistics. Results are accessible via the API.
+</ParamField>
+
+<ParamField path="access_log" type="boolean" default="0">
+  Enable Xray access logging. When disabled, access logs are suppressed (`"none"`).
+</ParamField>
+
+<ParamField path="loglevel" type="string" default="warning">
+  Xray log verbosity. Accepted values: `error`, `warning`, `info`, `debug`.
+</ParamField>
+
+<ParamField path="dns_log" type="boolean" default="0">
+  Enable logging of DNS queries processed by Xray.
+</ParamField>
+
+## Network bypass and forward lists
+
+<ParamField path="wan_bp_ips" type="string[]">
+  IP addresses (IPv4 or IPv6) that always bypass the proxy. Useful for bypassing specific CDN or regional IPs.
+</ParamField>
+
+<ParamField path="wan_fw_ips" type="string[]">
+  IP addresses that are always force-forwarded through the proxy, regardless of other bypass rules.
+</ParamField>
+
+<ParamField path="uids_direct" type="string[]">
+  Linux user IDs whose outgoing traffic bypasses the proxy entirely. Useful for exempting services such as the NTP daemon.
+</ParamField>
+
+<ParamField path="gids_direct" type="string[]">
+  Linux group IDs whose outgoing traffic bypasses the proxy.
+</ParamField>
+
+## Miscellaneous
+
+<ParamField path="mark" type="number" default="255">
+  The nftables firewall mark value (`0xff` by default) used to identify traffic that should bypass the transparent proxy. Xray-originated outbound traffic is excluded from re-interception by matching this mark.
+</ParamField>
+
+<ParamField path="fw4_counter" type="boolean" default="0">
+  When enabled, adds `counter packets 0 bytes 0` to every nftables rule, allowing per-rule traffic accounting.
+</ParamField>
+
+<ParamField path="ttl_override" type="number">
+  If set, replaces the IPv4 TTL field of matching packets with this value. Useful to work around TTL-based tethering detection.
+</ParamField>
+
+<ParamField path="hop_limit_override" type="number">
+  IPv6 equivalent of `ttl_override`. Overrides the hop limit field.
+</ParamField>
+
+<ParamField path="custom_configuration_hook" type="string">
+  A ucode expression that receives the generated Xray configuration object and returns a (possibly modified) replacement. This allows arbitrary post-processing of the generated config without patching the generator scripts.
+</ParamField>
+
+## Web server (HTTPS inbound)
+
+These options configure an optional HTTPS inbound, typically used to run Xray as a TLS-terminating entry point.
+
+<ParamField path="web_server_enable" type="boolean" default="0">
+  Enable the HTTPS inbound.
+</ParamField>
+
+<ParamField path="web_server_protocol" type="string">
+  Protocol for the HTTPS inbound. Either `vless` or `trojan`.
+</ParamField>
+
+<ParamField path="web_server_address" type="string">
+  Fallback address (host:port) to forward unrecognised connections to, such as a real web server.
+</ParamField>
+
+<ParamField path="web_server_cert_file" type="string">
+  Path to the TLS certificate file (PEM format).
+</ParamField>
+
+<ParamField path="web_server_key_file" type="string">
+  Path to the TLS private key file (PEM format).
+</ParamField>
+
+## Example UCI configuration
+
+The following snippet shows a minimal `general` section with the default values from the bundled config file:
+
+```text xray_core (UCI)
+config general
+    option transparent_proxy_enable '1'
+    list tproxy_ifaces_v4 'br-lan'
+    list tproxy_ifaces_v6 'br-lan'
+    list geoip_direct_code_list 'cn'
+    list geoip_direct_code_list_v6 'cn'
+    list blocked_domain_rules 'geosite:category-ads'
+    list bypassed_domain_rules 'geosite:cn'
+    list forwarded_domain_rules 'geosite:geolocation-!cn'
+    option loglevel 'warning'
+    option routing_domain_strategy 'AsIs'
+    option general_balancer_strategy 'random'
+    option transparent_default_port_policy 'forwarded'
+    option mark '255'
+    option handshake '4'
+    option conn_idle '300'
+    option uplink_only '2'
+    option downlink_only '5'
+    option buffer_size '4'
+```

@@ -1,0 +1,211 @@
+---
+title: "Transport layer, TLS, and REALITY configuration options"
+description: "Reference for all transport layer options in luci-app-xray: TCP, WebSocket, gRPC, HTTP/2, QUIC, mKCP, SplitHTTP, HTTPUpgrade, TLS, and REALITY."
+---
+
+The transport layer controls how Xray wraps and delivers data between the router and your proxy server. You configure it per server using the `transport` UCI option together with any transport-specific fields. TLS and REALITY settings use a naming convention based on the protocol prefix (e.g., `vmess_tls`, `vless_reality_public_key`).
+
+## Transport options
+
+### TCP
+
+Set `transport` to `tcp` for a plain TCP connection. You can optionally enable a fake HTTP header to disguise traffic.
+
+| UCI option | Description |
+|---|---|
+| `tcp_guise` | `none` for plain TCP, or `http` to add fake HTTP headers |
+| `http_path` | Path in the fake HTTP request (e.g., `/`) |
+| `http_host` | `Host` header value in the fake HTTP request |
+
+### WebSocket
+
+WebSocket wraps traffic in an HTTP Upgrade handshake, making it compatible with CDN and reverse proxy deployments.
+
+| UCI option | Description |
+|---|---|
+| `ws_path` | WebSocket path (e.g., `/ws`) |
+| `ws_host` | Overrides the `Host` header; required when behind a CDN |
+
+### gRPC
+
+gRPC transport uses HTTP/2 multiplexing and supports health checks for connection management.
+
+| UCI option | Description |
+|---|---|
+| `grpc_service_name` | gRPC service name |
+| `grpc_multi_mode` | Set to `1` to enable multi-mode (improves performance) |
+| `grpc_initial_windows_size` | Initial HTTP/2 window size (default: `0`, meaning system default) |
+| `grpc_health_check` | Set to `1` to enable health check |
+| `grpc_idle_timeout` | Idle timeout in seconds before health check triggers (default: `10`) |
+| `grpc_health_check_timeout` | Health check response timeout in seconds (default: `20`) |
+| `grpc_permit_without_stream` | Set to `1` to send health checks without active streams |
+
+### HTTP/2
+
+HTTP/2 transport creates persistent multiplexed connections. Enable health checks for long-lived connections.
+
+| UCI option | Description |
+|---|---|
+| `h2_path` | HTTP/2 request path |
+| `h2_host` | HTTP/2 host header |
+| `h2_health_check` | Set to `1` to enable health check |
+| `h2_read_idle_timeout` | Idle timeout in seconds before health check triggers (default: `10`) |
+| `h2_health_check_timeout` | Health check response timeout in seconds (default: `20`) |
+
+### QUIC
+
+QUIC is a UDP-based transport with optional header obfuscation. It is distinct from the Hysteria protocol transport.
+
+| UCI option | Description |
+|---|---|
+| `quic_security` | Security method (e.g., `none`, `aes-128-gcm`) |
+| `quic_key` | Key for the security method |
+| `quic_guise` | Obfuscation type (e.g., `none`, `srtp`, `utp`) |
+
+### mKCP
+
+mKCP tunnels TCP-like streams over UDP with configurable reliability parameters.
+
+| UCI option | Default | Description |
+|---|---|---|
+| `mkcp_mtu` | `1350` | Maximum transmission unit in bytes |
+| `mkcp_tti` | `50` | Transmission time interval in milliseconds |
+| `mkcp_uplink_capacity` | `5` | Uplink capacity in Mbps |
+| `mkcp_downlink_capacity` | `20` | Downlink capacity in Mbps |
+| `mkcp_congestion` | `0` | Set to `1` to enable congestion control |
+| `mkcp_read_buffer_size` | `2` | Read buffer size in MB |
+| `mkcp_write_buffer_size` | `2` | Write buffer size in MB |
+| `mkcp_seed` | — | Obfuscation seed (leave empty to disable) |
+| `mkcp_guise` | `none` | Header type for obfuscation (e.g., `srtp`, `utp`, `wechat-video`, `dtls`, `wireguard`) |
+
+### SplitHTTP
+
+SplitHTTP splits data across multiple HTTP requests for environments that do not support WebSocket.
+
+| UCI option | Description |
+|---|---|
+| `splithttp_path` | Request path |
+| `splithttp_host` | Host header |
+
+### HTTPUpgrade
+
+HTTPUpgrade establishes a single HTTP Upgrade connection and tunnels data through it.
+
+| UCI option | Description |
+|---|---|
+| `httpupgrade_path` | Request path |
+| `httpupgrade_host` | Host header |
+
+### Hysteria
+
+The `hysteria` transport is a special QUIC-based transport used exclusively with the Hysteria protocol. It configures bandwidth and UDP hopping.
+
+| UCI option | Description |
+|---|---|
+| `hysteria_up_mbps` | Upload bandwidth limit in Mbps |
+| `hysteria_down_mbps` | Download bandwidth limit in Mbps |
+| `hysteria_udphop_port` | Port range for UDP hopping (e.g., `20000-50000`) |
+| `hysteria_udphop_interval` | Seconds between port hops (default: `30`) |
+
+## TLS settings
+
+TLS settings apply when `{protocol}_tls` is set to `tls`. Replace `{protocol}` with the outbound protocol name (e.g., `vmess`, `vless`, `trojan`).
+
+| UCI option | Description |
+|---|---|
+| `{protocol}_tls` | `none`, `tls`, or `reality` |
+| `{protocol}_tls_host` | SNI / server name sent in the TLS handshake |
+| `{protocol}_tls_insecure` | Set to `0` to reject invalid certificates (default allows insecure) |
+| `{protocol}_tls_fingerprint` | TLS client fingerprint to impersonate (e.g., `chrome`, `firefox`, `safari`) |
+| `{protocol}_tls_alpn` | List of ALPN protocols (e.g., `h2`, `http/1.1`) |
+
+<Warning>
+`{protocol}_tls_insecure` defaults to allowing insecure connections. Set it explicitly to `0` in production to validate the server certificate.
+</Warning>
+
+## REALITY settings
+
+REALITY makes the TLS handshake indistinguishable from a real connection to a chosen destination server. It applies when `{protocol}_tls` is set to `reality`.
+
+| UCI option | Description |
+|---|---|
+| `{protocol}_reality_fingerprint` | TLS fingerprint to use (e.g., `chrome`) |
+| `{protocol}_reality_server_name` | Server name to present in the REALITY handshake |
+| `{protocol}_reality_public_key` | Server's REALITY public key (provided by the server operator) |
+| `{protocol}_reality_short_id` | Short ID matching one of the server's configured short IDs |
+| `{protocol}_reality_spider_x` | SpiderX path for additional anti-detection (optional) |
+| `{protocol}_reality_show` | Set to `1` to enable REALITY debug output |
+
+<Note>
+REALITY is only supported with the VLESS protocol in luci-app-xray. You must also set `vless_flow_reality` to `xtls-rprx-vision` for best performance.
+</Note>
+
+## Domain strategy and dialer proxy
+
+| UCI option | Description |
+|---|---|
+| `domain_strategy` | How to resolve domain names: `UseIP` (default), `UseIPv4`, `UseIPv6`, or `AsIs` |
+| `dialer_proxy` | UCI section name of another server to chain this connection through |
+
+`domain_strategy` controls whether Xray resolves the server address using IPv4, IPv6, or both before connecting. `AsIs` passes the domain name directly to the OS resolver.
+
+## UCI examples
+
+<Tabs>
+  <Tab title="VLESS + WebSocket + TLS">
+    ```text UCI
+    config servers 'vless_ws_tls'
+        option protocol 'vless'
+        option server 'example.com'
+        option server_port '443'
+        option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+        option vless_encryption 'none'
+        option transport 'ws'
+        option ws_path '/path'
+        option ws_host 'example.com'
+        option vless_tls 'tls'
+        option vless_tls_host 'example.com'
+        option vless_tls_insecure '0'
+        option vless_tls_fingerprint 'chrome'
+    ```
+  </Tab>
+  <Tab title="VMess + gRPC + TLS">
+    ```text UCI
+    config servers 'vmess_grpc_tls'
+        option protocol 'vmess'
+        option server 'example.com'
+        option server_port '443'
+        option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+        option alter_id '0'
+        option transport 'grpc'
+        option grpc_service_name 'my-service'
+        option grpc_multi_mode '1'
+        option grpc_health_check '1'
+        option grpc_idle_timeout '10'
+        option grpc_health_check_timeout '20'
+        option vmess_tls 'tls'
+        option vmess_tls_host 'example.com'
+        option vmess_tls_insecure '0'
+    ```
+  </Tab>
+  <Tab title="VLESS + REALITY">
+    ```text UCI
+    config servers 'vless_reality'
+        option protocol 'vless'
+        option server '1.2.3.4'
+        option server_port '443'
+        option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+        option vless_encryption 'none'
+        option vless_tls 'reality'
+        option vless_flow_reality 'xtls-rprx-vision'
+        option transport 'tcp'
+        option tcp_guise 'none'
+        option vless_reality_fingerprint 'chrome'
+        option vless_reality_server_name 'www.microsoft.com'
+        option vless_reality_public_key 'your-server-public-key'
+        option vless_reality_short_id 'abcd1234'
+        option vless_reality_spider_x '/'
+        option domain_strategy 'UseIPv4'
+    ```
+  </Tab>
+</Tabs>

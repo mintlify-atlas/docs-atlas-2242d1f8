@@ -1,0 +1,218 @@
+---
+title: "Transparent proxy configuration with nftables TProxy"
+description: "Learn how luci-app-xray uses nftables and TProxy to intercept LAN traffic, configure port policies, dynamic direct routing, and TTL manipulation."
+---
+
+The transparent proxy mode in luci-app-xray intercepts all outgoing LAN traffic at the network layer using nftables with Linux TProxy, without requiring any configuration changes on client devices. When `transparent_proxy_enable` is set to `1`, the init script installs policy routing rules and generates nftables chains that redirect matching packets to Xray's TProxy inbound ports.
+
+## How it works
+
+At startup, the init script runs:
+
+```bash
+ip rule add fwmark 0xfb lookup 251
+ip route add local default dev lo table 251
+```
+
+This causes any packet marked `0xfb` (251) by nftables to be delivered locally, where Xray's TProxy socket picks it up. The nftables rules generated from `firewall_include.ut` handle marking.
+
+## Traffic marks
+
+luci-app-xray uses a set of fixed firewall marks to distinguish traffic at different stages of processing.
+
+| Mark | Hex | Purpose |
+|------|-----|---------|
+| 251 | `0xfb` | Traffic to be intercepted by TProxy |
+| 252 | `0xfc` | Xray direct outbound (freedom with `dynamic_direct` mark) |
+| 253 | `0xfd` | Xray transparent proxy outbound |
+| 254 | `0xfe` | Xray non-IP DNS query outbound |
+| `general_mark` | `0xff` (default) | User-specified bypass mark; traffic with this mark exits without interception |
+
+<Note>
+  The `general_mark` value is configurable via the `mark` option in the `general` UCI section. Change it only if you have a conflict with another application using the same mark value.
+</Note>
+
+## Interface selection
+
+<ParamField path="tproxy_ifaces_v4" type="string[]">
+  LAN interfaces from which IPv4 traffic is intercepted and redirected to TProxy. Typically `br-lan`. Traffic arriving on interfaces not in this list passes through without being proxied.
+</ParamField>
+
+<ParamField path="tproxy_ifaces_v6" type="string[]">
+  LAN interfaces from which IPv6 traffic is intercepted.
+</ParamField>
+
+<ParamField path="bypass_ifaces_v4" type="string[]">
+  IPv4 interfaces that are excluded from any proxying. Traffic on these interfaces is accepted immediately in `xray_prerouting` before interface-based TProxy rules are reached.
+</ParamField>
+
+<ParamField path="bypass_ifaces_v6" type="string[]">
+  IPv6 interfaces excluded from proxying.
+</ParamField>
+
+## Port policies
+
+<ParamField path="transparent_default_port_policy" type="string" default="forwarded">
+  Controls the default fate of ports not explicitly listed.
+
+  - `forwarded` — All ports are proxied by default. Use `wan_bp_*_ports` to selectively bypass specific ports.
+  - `bypassed` — All ports bypass the proxy by default. Use `wan_fw_*_ports` to selectively proxy specific ports.
+</ParamField>
+
+<ParamField path="wan_fw_tcp_ports" type="string[]">
+  TCP ports that are force-forwarded through the proxy even when the default policy is `bypassed`.
+</ParamField>
+
+<ParamField path="wan_fw_udp_ports" type="string[]">
+  UDP ports that are force-forwarded through the proxy even when the default policy is `bypassed`.
+</ParamField>
+
+<ParamField path="wan_bp_tcp_ports" type="string[]">
+  TCP ports that bypass the proxy even when the default policy is `forwarded`. Useful for exempting services such as NTP (123) or game traffic.
+</ParamField>
+
+<ParamField path="wan_bp_udp_ports" type="string[]">
+  UDP ports that bypass the proxy even when the default policy is `forwarded`.
+</ParamField>
+
+## IP bypass and forward lists
+
+<ParamField path="wan_bp_ips" type="string[]">
+  IP addresses (IPv4 or IPv6) that always bypass the proxy, regardless of port or interface. Added to the `tp_spec_dv4_bp` / `tp_spec_dv6_bp` nftables sets.
+</ParamField>
+
+<ParamField path="wan_fw_ips" type="string[]">
+  IP addresses that are always force-forwarded through the proxy. Added to the `tp_spec_dv4_fw` / `tp_spec_dv6_fw` sets and checked before bypass rules.
+</ParamField>
+
+## Private IP bypass
+
+Private and special-purpose IP ranges are always bypassed. luci-app-xray pre-populates nftables sets `tp_spec_dv4_sp` and `tp_spec_dv6_sp` with these ranges:
+
+```text nftables sets (auto-configured)
+# IPv4 special ranges (tp_spec_dv4_sp)
+0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24,
+192.52.193.0/24, 192.168.0.0/16, 224.0.0.0/3
+
+# IPv6 special ranges (tp_spec_dv6_sp)
+::, ::1, ::ffff:0.0.0.0/96, ::ffff:0:0:0/96,
+64:ff9b::/96, 100::/64, 2001::/32, 2001:20::/28,
+2001:db8::/32, 2002::/16, fc00::/7, fe80::/10, ff00::/8
+```
+
+<Note>
+  The default gateway IP is also dynamically added to `tp_spec_dv4_dg` at startup so that router management traffic is never accidentally proxied.
+</Note>
+
+## UID and GID bypass
+
+<ParamField path="uids_direct" type="string[]">
+  Linux user IDs whose outgoing traffic bypasses TProxy interception in the `xray_output` chain. Useful for exempting daemons such as `ntpd` or `ddns-scripts`.
+</ParamField>
+
+<ParamField path="gids_direct" type="string[]">
+  Linux group IDs whose outgoing traffic bypasses TProxy interception.
+</ParamField>
+
+## Dynamic direct routing
+
+Dynamic direct caches destination IP addresses that result in direct (non-proxied) connections. Once an IP is cached, subsequent connections to it skip the full routing evaluation and go directly.
+
+<ParamField path="dynamic_direct_tcp4" type="boolean" default="0">
+  Enable dynamic direct caching for TCP IPv4. When a direct connection exits via `dynamic_direct` outbound (mark `0xfc`), both the source and destination IPs are added to `tp_spec_dv4_dd` with a timeout.
+</ParamField>
+
+<ParamField path="dynamic_direct_tcp6" type="boolean" default="0">
+  Enable dynamic direct caching for TCP IPv6.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp4" type="boolean" default="0">
+  Enable dynamic direct caching for UDP IPv4.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp6" type="boolean" default="0">
+  Enable dynamic direct caching for UDP IPv6.
+</ParamField>
+
+<ParamField path="dynamic_direct_timeout" type="number" default="2233">
+  Cache entry lifetime in seconds. After this period, the IP is evicted from the nftables set and will be routed again through the full routing decision.
+</ParamField>
+
+The dynamic direct cache uses two nftables sets with the `timeout` flag:
+- `tp_spec_dv4_dd` — IPv4 direct cache
+- `tp_spec_dv6_dd` — IPv6 direct cache
+
+Additionally, conntrack sets `tp_spec_ctt_dd` (TCP) and `tp_spec_ctu_dd` (UDP) track sport-based connections to enable bidirectional direct routing without re-evaluating each packet.
+
+## TTL manipulation
+
+TTL manipulation rewrites the TTL (IPv4) or hop limit (IPv6) field of packets passing through the router. This is commonly used to circumvent tethering restrictions imposed by mobile operators that detect shared traffic by its TTL value.
+
+<ParamField path="ttl_override" type="number">
+  If set to a non-zero value, packets whose IPv4 TTL matches `ttl_hop_limit_match` have their TTL replaced with this value.
+</ParamField>
+
+<ParamField path="hop_limit_override" type="number">
+  If set to a non-zero value, IPv6 packets whose hop limit matches `ttl_hop_limit_match` have their hop limit replaced.
+</ParamField>
+
+<ParamField path="ttl_hop_limit_match" type="number">
+  The TTL/hop-limit value to match before applying the override. Typically set to `64` (the default TTL of most operating systems).
+</ParamField>
+
+<ParamField path="ttl_override_bypass_ports" type="string[]">
+  TCP/UDP destination ports excluded from TTL manipulation. Traffic to these ports passes through the `xray_prerouting` chain unmodified.
+</ParamField>
+
+## nftables chain flow
+
+The generated nftables rules are structured as a series of chains. The diagram below shows the key decision points:
+
+```text nftables chain flow
+xray_transparent_proxy (prerouting filter)
+  └─► mark 0xfb → tp_spec_wan_fw   [TProxy redirect chain]
+      ├─► FakeDNS pool → tproxy :1086/1087/1088/1089
+      ├─► wan_fw_ips → tproxy :1082/1084
+      └─► tcp/udp → tproxy :1082/1083/1084/1085
+
+xray_prerouting (prerouting mangle)
+  ├─► TTL override (optional)
+  ├─► dynamic direct cache hit → accept
+  ├─► mark 0xfb → accept (already marked)
+  ├─► jump tp_spec_lan_mf   [FakeDNS / manual tproxy check]
+  ├─► bypass_ifaces → accept
+  ├─► bypass MAC sets → accept
+  ├─► tproxy_ifaces / tproxy MAC sets → goto tp_spec_lan_ac
+
+tp_spec_lan_ac
+  ├─► wan_fw_ips → goto tp_spec_lan_fw
+  ├─► default gateway → accept
+  ├─► wan_bp_ips → accept
+  └─► private IPs (tp_spec_dv4_sp) → accept
+      └─► goto tp_spec_lan_re
+
+tp_spec_lan_re  [port policy]
+  ├─► bypassed: wan_fw_ports → goto tp_spec_lan_fw
+  └─► forwarded: wan_bp_ports → accept
+      └─► goto tp_spec_lan_dd
+
+tp_spec_lan_dd  [dynamic direct check]
+  ├─► daddr in tp_spec_dv4_dd → goto tp_spec_lan_ct
+  └─► default → goto tp_spec_lan_fw
+
+tp_spec_lan_fw
+  └─► mark set 0xfb, accept   [triggers TProxy via ip rule]
+
+xray_output (output mangle)
+  ├─► uids/gids in direct list → accept
+  └─► goto tp_spec_wan_ac
+      ├─► mark 0xfc (dynamic_direct outbound) → update dd cache, accept
+      ├─► mark 0xfd (proxy outbound) → accept
+      ├─► mark 0xfe (DNS outbound) → accept
+      └─► mark general_mark → accept
+```
+
+<Tip>
+  Enable `fw4_counter` in the general settings to add packet/byte counters to every rule. You can then inspect them with `nft list ruleset` to see which rules are being hit.
+</Tip>

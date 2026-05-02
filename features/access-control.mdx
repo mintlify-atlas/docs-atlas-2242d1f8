@@ -1,0 +1,102 @@
+---
+title: "Per-device access control for transparent proxying"
+description: "Configure tproxy, bypass, and forward strategies per MAC address to control which LAN devices are proxied through Xray on OpenWrt."
+---
+
+luci-app-xray lets you apply different transparent proxy strategies to individual LAN devices based on their MAC address. You can choose to route a device through Xray, bypass the proxy entirely, or forward its traffic to a specific extra inbound — for example, to use a different upstream server for certain devices.
+
+## Strategies
+
+Each `lan_hosts` UCI section configures one device and can set independent strategies for IPv4 and IPv6 traffic.
+
+| Strategy | Description |
+|---|---|
+| `tproxy` | Intercept the device's traffic and route it through Xray |
+| `bypass` | Let the device's traffic pass directly without proxying |
+| `forward` | Route the device's traffic to a specific extra inbound (to use a different server) |
+
+## Configuration
+
+`lan_hosts` sections are of UCI type `lan_hosts`.
+
+| UCI option | Description |
+|---|---|
+| `macaddr` | MAC address of the device (e.g., `aa:bb:cc:dd:ee:ff`) |
+| `access_control_strategy_v4` | IPv4 strategy: `tproxy`, `bypass`, or `forward` |
+| `access_control_strategy_v6` | IPv6 strategy: `tproxy`, `bypass`, or `forward` |
+| `access_control_forward_tcp_v4` | Extra inbound UCI section name for TCP IPv4 (used when strategy is `forward`) |
+| `access_control_forward_udp_v4` | Extra inbound UCI section name for UDP IPv4 (used when strategy is `forward`) |
+| `access_control_forward_tcp_v6` | Extra inbound UCI section name for TCP IPv6 (used when strategy is `forward`) |
+| `access_control_forward_udp_v6` | Extra inbound UCI section name for UDP IPv6 (used when strategy is `forward`) |
+| `alias` | Optional display name for the device in the LuCI interface |
+
+## How nftables enforces access control
+
+The `firewall_include.ut` template generates nftables sets for each strategy and MAC address group. The rules are evaluated in the `xray_prerouting` chain.
+
+**Bypass devices** — the device's MAC is added to the `tp_spec_sm4_bp` (IPv4) or `tp_spec_sm6_bp` (IPv6) set. Any TCP or UDP packet from that MAC is accepted immediately, skipping Xray:
+
+```text nftables
+ip protocol tcp ether saddr @tp_spec_sm4_bp accept
+ip protocol udp ether saddr @tp_spec_sm4_bp accept
+```
+
+**TProxy devices** — the device's MAC is added to the `tp_spec_sm4_tp` (IPv4) or `tp_spec_sm6_tp` (IPv6) set. Traffic is redirected to the `tp_spec_lan_ac` chain, which applies further IP-based rules before tproxying:
+
+```text nftables
+ip protocol tcp ether saddr @tp_spec_sm4_tp goto tp_spec_lan_ac
+ip protocol udp ether saddr @tp_spec_sm4_tp goto tp_spec_lan_ac
+```
+
+**Forward devices** — the device's MAC is added to a per-inbound set (e.g., `tp_spec_sm4_ft_{inbound}`). Traffic is tproxied directly to the port of the specified extra inbound:
+
+```text nftables
+ip protocol tcp ether saddr @tp_spec_sm4_ft_{inbound} tproxy ip to :{inbound_port} accept
+```
+
+## Global UID and GID bypass
+
+In addition to per-device control, you can bypass the proxy for traffic originating from specific Unix user IDs or group IDs on the router itself. This is configured in the `general` section and affects the `xray_output` chain.
+
+| UCI option | Description |
+|---|---|
+| `uids_direct` | List of Unix user IDs whose outbound traffic bypasses Xray |
+| `gids_direct` | List of Unix group IDs whose outbound traffic bypasses Xray |
+
+This is useful for ensuring that Xray's own traffic and other system processes do not loop back through the proxy.
+
+## UCI example
+
+```text UCI
+config general 'main'
+    list uids_direct '65534'
+    list gids_direct '65534'
+    # ... other general settings
+
+# Device that bypasses the proxy entirely
+config lan_hosts 'smart_tv'
+    option macaddr 'aa:bb:cc:11:22:33'
+    option access_control_strategy_v4 'bypass'
+    option access_control_strategy_v6 'bypass'
+    option alias 'Smart TV'
+
+# Device that is transparently proxied (default behaviour)
+config lan_hosts 'laptop'
+    option macaddr 'aa:bb:cc:44:55:66'
+    option access_control_strategy_v4 'tproxy'
+    option access_control_strategy_v6 'tproxy'
+    option alias 'Work Laptop'
+
+# Device forwarded to a specific extra inbound (e.g., a different server)
+config lan_hosts 'games_console'
+    option macaddr 'aa:bb:cc:77:88:99'
+    option access_control_strategy_v4 'forward'
+    option access_control_forward_tcp_v4 'low_latency_inbound'
+    option access_control_forward_udp_v4 'low_latency_inbound'
+    option access_control_strategy_v6 'bypass'
+    option alias 'Games Console'
+```
+
+<Note>
+Devices not listed in any `lan_hosts` section follow the default policy for their network interface, which is typically `tproxy` for the LAN interface.
+</Note>

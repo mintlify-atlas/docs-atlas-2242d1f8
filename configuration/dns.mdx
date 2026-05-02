@@ -1,0 +1,149 @@
+---
+title: "DNS configuration for luci-app-xray transparent proxy"
+description: "Configure tiered DNS resolution with fast, secure, and default servers, FakeDNS integration, dnsmasq support, and per-server domain resolution."
+---
+
+luci-app-xray implements a tiered DNS system where different categories of domain names are resolved by different DNS servers. Domestic (bypassed) domains resolve through a fast local DNS server, proxied domains resolve through a secure DNS server routed through the proxy, and all other domains fall back to a default resolver. This separation prevents DNS leaks while keeping latency low for local traffic.
+
+## DNS server tiers
+
+<ParamField path="fast_dns" type="string" default="223.5.5.5:53">
+  DNS server for domestic or bypassed domains (those matching `bypassed_domain_rules`). This server is accessed directly without the proxy. Format: `host:port` or `host` (defaults to port 53).
+</ParamField>
+
+<ParamField path="secure_dns" type="string" default="8.8.8.8:53">
+  DNS server for proxied domains (those matching `forwarded_domain_rules`). Queries to this server are routed through the proxy outbound balancer to prevent DNS leaks.
+</ParamField>
+
+<ParamField path="default_dns" type="string" default="1.1.1.1:53">
+  Fallback DNS server for all domains not matched by any rule. Also used as the destination address for DNS server inbound listeners.
+</ParamField>
+
+<ParamField path="dns_port" type="number" default="5300">
+  Starting port for the DNS server inbound listeners that Xray creates. The range is `dns_port` through `dns_port + dns_count`.
+</ParamField>
+
+<ParamField path="dns_count" type="number" default="3">
+  Number of DNS server inbound ports created. With the default `dns_port=5300` and `dns_count=3`, ports 5300, 5301, 5302, and 5303 are created.
+</ParamField>
+
+## DNS query strategy
+
+The Xray DNS module is configured with `queryStrategy: "UseIP"`, which means it requests both A and AAAA records and returns results for whichever address families it receives. This ensures that IPv6-capable destinations are resolved correctly.
+
+## DNS server list resolution order
+
+When Xray resolves a domain, it walks the DNS server list in order and uses the first server whose `domains` list matches. The order in the generated config is:
+
+<Steps>
+  <Step title="FakeDNS domains">
+    Domains captured by FakeDNS rules are answered with virtual IPs from the FakeDNS pool before any real DNS query is made.
+  </Step>
+  <Step title="Per-server custom resolvers">
+    Domains of server entries that have `domain_resolve_dns` set use their own dedicated DNS entry with `skipFallback: true`.
+  </Step>
+  <Step title="Default DNS (fallback)">
+    All domains not matched above fall through to the `default_dns` server.
+  </Step>
+  <Step title="Fast DNS">
+    Domains matching `bypassed_domain_rules` (plus domains of servers without a custom resolver) use `fast_dns`. The entry has `skipFallback: true` and optionally restricts acceptable response IPs via `expectIPs`.
+  </Step>
+  <Step title="Secure DNS">
+    Domains matching `forwarded_domain_rules` use `secure_dns`. This entry does not set `skipFallback`, so unresolved queries fall through.
+  </Step>
+</Steps>
+
+<Note>
+  Blocked domains (matching `blocked_domain_rules`) are not sent to any DNS server. Instead, they are answered with `127.127.127.127` (IPv4) and `100::6c62:636f:656b:2164` (IPv6) via the static `hosts` map, effectively blocking those domain names before any network query is made.
+</Note>
+
+## GeoIP alignment for fast DNS
+
+<ParamField path="align_fast_dns_to_geoip_direct" type="boolean" default="0">
+  When enabled, the `fast_dns` server entry gains an `expectIPs` constraint populated from `geoip_direct_code_list` and `geoip_direct_code_list_v6`. This ensures that the fast DNS server only returns IPs that belong to the direct-routed country codes, preventing poisoned responses from slipping through.
+</ParamField>
+
+## DNS hijacking (preview)
+
+These options redirect DNS queries that arrive on the TProxy inbounds to a specific address, overriding the normal DNS flow.
+
+<ParamField path="dns_tcp_hijack" type="string">
+  Redirect TCP DNS queries (port 53) to this address (host:port). A dedicated `dns_tcp_hijack_outbound` freedom outbound is created pointing to the specified destination.
+</ParamField>
+
+<ParamField path="dns_udp_hijack" type="string">
+  Redirect UDP DNS queries (port 53) to this address. A dedicated `dns_udp_hijack_outbound` is created.
+</ParamField>
+
+<Warning>
+  DNS hijacking intercepts all port-53 traffic from the TProxy inbounds, including queries from devices that have configured custom DNS servers. Use with care in environments with mixed DNS configurations.
+</Warning>
+
+## dnsmasq integration
+
+<ParamField path="dnsmasq_integration_mode" type="string">
+  How luci-app-xray integrates with the dnsmasq instance(s) running on the router.
+
+  | Value | Behaviour |
+  |-------|-----------|
+  | `global` | Configure the single global dnsmasq instance |
+  | `per_instance` | Configure specific named dnsmasq instances listed in `dnsmasq_instances` |
+</ParamField>
+
+<ParamField path="dnsmasq_instances" type="string[]">
+  Names of dnsmasq instances to configure when `dnsmasq_integration_mode` is `per_instance`.
+</ParamField>
+
+## Per-server domain resolution
+
+Each `servers` UCI section can specify its own DNS resolver for resolving the server's hostname. This is useful when you need to resolve a proxy server domain through a specific DNS server (for example, to avoid pollution or to use a local resolver for low latency).
+
+<ParamField path="domain_resolve_dns" type="string">
+  DNS server address for resolving this server's hostname. When set, a dedicated DNS entry is inserted into Xray's server list with `skipFallback: true`.
+</ParamField>
+
+<ParamField path="domain_resolve_dns_method" type="string" default="udp">
+  Transport method for the per-server DNS query.
+
+  | Value | Format | Example |
+  |-------|--------|---------|
+  | `udp` | `host:port` | `8.8.8.8:53` |
+  | `tcp` | `host:port` | `8.8.8.8:53` |
+  | `https` | `host/path` | `dns.google` |
+  | `doq` | `host:port` | `dns.adguard.com:784` |
+  | `local` | — | Uses system resolver; bypasses proxy |
+</ParamField>
+
+<ParamField path="domain_resolve_expect_ips" type="string[]">
+  IP filter for per-server DNS. If the resolved IP does not match any entry, the result is discarded. Accepts GeoIP codes (e.g., `geoip:us`) and CIDR ranges.
+</ParamField>
+
+## FakeDNS integration
+
+When FakeDNS sections are configured, the DNS module prepends FakeDNS virtual domain entries to the top of the servers list. This means FakeDNS domains are answered before any real DNS query is dispatched.
+
+FakeDNS assigns virtual IPs from configured address pools:
+- Default IPv4 pool: `198.18.0.0/15`
+- Default IPv6 pool: `fc00::/18`
+
+Traffic destined for these IP ranges is then intercepted by the FakeDNS TProxy inbounds (`tproxy_*_inbound_f4/f6`) and routed according to the FakeDNS forwarding configuration.
+
+## DNS query flow
+
+```text
+Client query
+    │
+    ▼
+Xray DNS module (tag: dns_conf_inbound)
+    │
+    ├─► FakeDNS domains          → virtual IP (no real query)
+    ├─► Blocked domains          → 127.127.127.127 (hosts map)
+    ├─► Per-server domains       → custom resolver (skipFallback)
+    ├─► fast_dns domains         → fast_dns server (direct, skipFallback)
+    ├─► secure_dns domains       → secure_dns server (via proxy)
+    └─► everything else          → default_dns server (fallback)
+```
+
+<Tip>
+  To verify which DNS server is handling a specific domain, enable `dns_log` in the general settings and watch the Xray log output with `logread -f`.
+</Tip>

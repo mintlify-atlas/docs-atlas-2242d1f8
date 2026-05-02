@@ -1,0 +1,99 @@
+{
+  "projectType": "general",
+  "projectName": "luci-app-xray",
+  "projectDescription": "A full-featured LuCI web interface for running Xray as a transparent proxy client on OpenWrt routers, supporting multiple protocols, DNS management, and per-device access control.",
+  "theme": "aspen",
+  "primaryColor": "#2563EB",
+  "lightColor": "#3B82F6",
+  "darkColor": "#1D4ED8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/general-settings",
+              "configuration/servers",
+              "configuration/inbound-outbound",
+              "configuration/dns",
+              "configuration/transparent-proxy"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/protocols",
+              "features/transport",
+              "features/fakedns",
+              "features/bridge-reverse-proxy",
+              "features/access-control",
+              "features/https-server"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/status-monitoring",
+              "operations/geodata",
+              "operations/custom-configuration-hook",
+              "operations/troubleshooting"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/uci-options",
+              "reference/firewall-rules",
+              "reference/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Transparent proxy (TProxy) support for IPv4 and IPv6 via nftables/firewall4",
+    "Multiple outbound protocols: VMess, VLESS, Shadowsocks, Trojan, Hysteria, SOCKS, HTTP",
+    "Multiple transport layers: TCP, WebSocket, gRPC, HTTP/2, QUIC, mKCP, SplitHTTP, HTTPUpgrade",
+    "Built-in DNS server with fast/secure/default DNS tiers and FakeDNS support",
+    "Per-device (MAC address) access control with bypass, TProxy, and forward strategies",
+    "Manual transparent proxy rules for specific source IPs",
+    "Reverse proxy (bridge) support for exposing local services",
+    "HTTPS inbound server with VLESS/Trojan protocol support",
+    "Xray Metrics and API server integration for monitoring",
+    "Custom configuration hook for advanced Xray JSON overrides",
+    "GeoIP/GeoSite based routing with domain and IP rules",
+    "Extra configurable inbounds (HTTP, SOCKS5, TProxy TCP/UDP)",
+    "LuCI client-side rendered web UI for OpenWrt (requires OpenWrt 22.03+)",
+    "REALITY protocol support for anti-censorship",
+    "Dynamic direct routing to reduce unnecessary proxying",
+    "dnsmasq integration for seamless DNS hijacking"
+  ],
+  "publicApiSurface": [
+    "UCI config section: general (transparent_proxy_enable, tproxy_ifaces_v4/v6, dns options, routing, balancer)",
+    "UCI config section: servers (protocol, server, port, transport, tls, uuid, etc.)",
+    "UCI config section: extra_inbound (inbound_type, inbound_port, inbound_addr, specify_outbound)",
+    "UCI config section: manual_tproxy (source_addr, source_port, dest_addr, dest_port, force_forward)",
+    "UCI config section: bridge (domain, upstream, redirect)",
+    "UCI config section: fakedns (fake_dns_domains, pool_v4, pool_v6, fake_dns_forward_server_tcp/udp)",
+    "UCI config section: lan_hosts (macaddr, access_control_strategy_v4/v6)",
+    "UCI config section: fallback (dest, alpn, name, xver, path)",
+    "gen_config.uc: generates /var/etc/xray/config.json from UCI config",
+    "firewall_include.ut: generates nftables rules for transparent proxy",
+    "dnsmasq_include.ut: generates dnsmasq config for DNS integration",
+    "init.d/xray_core: start/stop/reload service management",
+    "rpcd API: xray RPC endpoint for LuCI",
+    "LuCI views: core.js, preview.js, protocol.js, shared.js, transport.js",
+    "Custom configuration hook: general.custom_configuration_hook (ucode function)"
+  ]
+}

@@ -1,0 +1,129 @@
+---
+title: "Install luci-app-xray on your OpenWrt router"
+description: "Two ways to install luci-app-xray: build it into your OpenWrt firmware from source, or use GitHub Actions to produce ready-to-install .ipk packages."
+---
+
+luci-app-xray is not available in the default OpenWrt package feeds, so you need to either add it as a custom feed when building OpenWrt from source, or fork the repository and use GitHub Actions to produce `.ipk` packages you can install on an existing router.
+
+## Method 1: Build from source
+
+Use this method if you are already building a custom OpenWrt image. luci-app-xray ships as a standard OpenWrt package and integrates with the OpenWrt build system.
+
+<Steps>
+  <Step title="Add the feed">
+    Open `feeds.conf.default` in your OpenWrt source directory and add the following line:
+
+    ```text
+    src-git-full luci_app_xray https://github.com/yichya/luci-app-xray
+    ```
+
+    Alternatively, clone the repository directly under the `package/` directory in your OpenWrt source tree:
+
+    ```bash
+    git clone https://github.com/yichya/luci-app-xray package/luci-app-xray
+    ```
+  </Step>
+  <Step title="Update and install feeds">
+    If you used the `feeds.conf.default` approach, run:
+
+    ```bash
+    ./scripts/feeds update -a
+    ./scripts/feeds install -a
+    ```
+  </Step>
+  <Step title="Select the package">
+    Run `make menuconfig` and navigate to **Extra Packages**. Enable `luci-app-xray` and optionally `luci-app-xray-status` and `luci-app-xray-geodata`.
+  </Step>
+  <Step title="Configure build options">
+    With `luci-app-xray` selected, you will see a configuration submenu with the following options:
+
+    | Option | Default | Description |
+    |---|---|---|
+    | `PACKAGE_XRAY_INCLUDE_CLOUDFLARE_ORIGIN_ROOT_CA` | off | Include the Cloudflare Origin Root CA certificate |
+    | `PACKAGE_XRAY_RLIMIT_NOFILE_LARGE` | **on** | Increase the max open files limit (recommended) |
+    | `PACKAGE_XRAY_RESTART_DNSMASQ_ON_IFACE_CHANGE` | off | Restart dnsmasq on interface change (enable if using dnsmasq v2.87) |
+    | `PACKAGE_XRAY_IGNORE_TP_SPEC_DEF_GW` | off | Ignore `TP_SPEC_DEF_GW` (enable if your router uses a private IPv4 address as its WAN gateway) |
+    | Memory limit (`rlimit_data`) | Unlimited | Optionally cap Xray memory: unlimited, small (~50 MB), or large (~321 MB) |
+
+    Leave `PACKAGE_XRAY_RLIMIT_NOFILE_LARGE` enabled unless you have a specific reason to disable it.
+  </Step>
+  <Step title="Build the image">
+    ```bash
+    make -j$(nproc)
+    ```
+
+    Flash the resulting image to your router as usual.
+  </Step>
+</Steps>
+
+## Method 2: GitHub Actions (pre-built .ipk packages)
+
+Use this method if you already have OpenWrt running and want to install luci-app-xray without rebuilding the entire firmware.
+
+<Steps>
+  <Step title="Fork the repository">
+    Fork [yichya/luci-app-xray](https://github.com/yichya/luci-app-xray) on GitHub to your own account.
+  </Step>
+  <Step title="Create a release by pushing a tag">
+    Clone your fork locally and push a tag to trigger the build workflow:
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/luci-app-xray
+    cd luci-app-xray
+    git tag v3.7.1-custom
+    git push origin v3.7.1-custom
+    ```
+
+    GitHub Actions will start building `.ipk` packages for the tagged release.
+  </Step>
+  <Step title="Wait for Actions to finish">
+    In your forked repository on GitHub, open the **Actions** tab and wait for the workflow run to complete. This typically takes several minutes.
+  </Step>
+  <Step title="Download and install the .ipk files">
+    Once the workflow finishes, download the `.ipk` files from the release assets. Copy them to your router (via `scp` or a USB drive), then install:
+
+    ```bash
+    opkg install *.ipk
+    ```
+
+    <Note>
+      Install all downloaded `.ipk` files together so that package dependencies resolve correctly.
+    </Note>
+  </Step>
+</Steps>
+
+## Runtime dependencies
+
+Regardless of the installation method, the following packages must be present on your router at runtime:
+
+```bash
+opkg install xray-core dnsmasq ca-bundle kmod-nft-tproxy
+```
+
+firewall4 is part of OpenWrt 22.03+ and should already be installed. If `kmod-nft-tproxy` is missing, transparent proxy interception will not work.
+
+<Note>
+  luci-app-xray requires the `geoip.dat` and `geosite.dat` asset files for routing rules. Install them with:
+
+  ```bash
+  opkg update && opkg install v2ray-geoip v2ray-geosite
+  ```
+
+  If these files are missing, you will see a warning in the Xray status output and routing rules that reference geoip or geosite categories will not function.
+</Note>
+
+## Enabling the preview app
+
+Some features (global SOCKS/HTTP inbounds, sniffing, DNS hijacking) are deprecated in the main app and are only available in the preview app. To enable it:
+
+<Steps>
+  <Step title="Enable the preview option">
+    In the LuCI interface, go to **Services → Xray → Extra Settings** and select **Preview or Deprecated**.
+  </Step>
+  <Step title="Reboot your router">
+    Reboot for the change to take effect.
+  </Step>
+  <Step title="Access the preview app">
+    After rebooting, a new **Xray (preview)** option will appear under **Services** in the LuCI navigation menu.
+  </Step>
+</Steps>

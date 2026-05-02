@@ -1,133 +1,61 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "luci-app-xray: Full-featured Xray client for OpenWrt"
+description: "luci-app-xray is a LuCI interface for OpenWrt transparent proxying with Xray-core, supporting VMess, VLESS, Shadowsocks, Trojan, Hysteria, and more protocols."
 ---
 
-## Setting up
+luci-app-xray brings the full power of [Xray-core](https://github.com/XTLS/Xray-core) to your OpenWrt router through a clean LuCI web interface. It sets up transparent proxying for your entire LAN — routing traffic through your chosen proxy servers with fine-grained control over which devices bypass, use, or forward through the proxy.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Build from source or use GitHub Actions to generate installable `.ipk` packages for your router.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Configure your first proxy server and enable transparent proxying in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Configuration" icon="sliders" href="/configuration/general-settings">
+    Explore all UCI configuration options for general settings, servers, DNS, and routing.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Protocols" icon="network-wired" href="/features/protocols">
+    Supported outbound protocols: VMess, VLESS, Shadowsocks, Trojan, Hysteria, SOCKS, HTTP.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What luci-app-xray does
 
-Everything you need to create world-class documentation.
+luci-app-xray generates a complete Xray JSON configuration from your UCI settings and manages the Xray process via OpenWrt's procd init system. It configures nftables transparent proxy rules so that LAN traffic is intercepted and routed through Xray without any per-device configuration.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="DNS management" icon="server" href="/configuration/dns">
+    Built-in multi-tier DNS with fast, secure, and default servers, plus FakeDNS support.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Access control" icon="shield-halved" href="/features/access-control">
+    Per-device (MAC address) policies: bypass, transparent proxy, or forward to specific servers.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Transport layers" icon="arrows-left-right" href="/features/transport">
+    TCP, WebSocket, gRPC, HTTP/2, QUIC, mKCP, SplitHTTP, HTTPUpgrade, and Hysteria.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Status & monitoring" icon="chart-line" href="/operations/status-monitoring">
+    Real-time metrics via the Xray Metrics API and a dedicated status page.
   </Card>
-</Columns>
+</CardGroup>
 
-## Make your content agent ready
+## Getting started
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Install luci-app-xray on your router">
+    Add the feed to your OpenWrt build or use the pre-built `.ipk` packages from GitHub Releases. Requires OpenWrt 22.03 or later with firewall4.
+  </Step>
+  <Step title="Add a proxy server">
+    In the LuCI interface, go to **Services → Xray** and add a server entry with your proxy protocol, address, port, and credentials.
+  </Step>
+  <Step title="Enable transparent proxy">
+    Under **General Settings**, enable **Transparent Proxy** and select the LAN interfaces to intercept (e.g., `br-lan`). Set your balancer to point to the server you added.
+  </Step>
+  <Step title="Reboot and verify">
+    Reboot your router. Traffic from LAN devices will now be routed through Xray. Check the **Status** page to confirm Xray is running and inspect active connections.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+  luci-app-xray requires OpenWrt 22.03 or later with firewall4 and nftables. It does **not** support LEDE, OpenWrt prior to 22.03, or Lean's OpenWrt fork. If you need support for older versions, consider Passwall or similar alternatives.
+</Note>

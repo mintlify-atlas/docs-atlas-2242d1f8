@@ -1,0 +1,59 @@
+---
+title: "Introduction to luci-app-xray for OpenWrt"
+description: "Learn what luci-app-xray is, how it works as a transparent proxy on OpenWrt routers, and which packages and system requirements you need to get started."
+---
+
+luci-app-xray is a client-side rendered LuCI web interface that integrates [Xray-core](https://github.com/XTLS/Xray-core) into OpenWrt as a transparent proxy. Rather than requiring per-device configuration, it intercepts LAN traffic at the router level using nftables rules managed by firewall4, routing packets through Xray without any changes to individual devices on the network.
+
+## Key concepts
+
+**Transparent proxy** — A transparent proxy intercepts network traffic at the network layer without requiring applications or devices to be configured to use it. luci-app-xray sets up nftables rules via firewall4 so that TCP and UDP packets from selected LAN interfaces are redirected to Xray before leaving the router.
+
+**Xray-core** — [Xray-core](https://github.com/XTLS/Xray-core) is the underlying proxy engine. It handles all protocol negotiation, routing decisions, and DNS resolution. luci-app-xray generates a complete Xray JSON configuration from your UCI settings and manages the Xray process through OpenWrt's procd init system.
+
+**UCI configuration** — OpenWrt's Unified Configuration Interface (UCI) is the system used to store and manage all router settings. luci-app-xray stores its configuration in `/etc/config/xray_core` and reads it at startup to generate the Xray JSON config.
+
+**firewall4 / nftables** — firewall4 is OpenWrt's firewall manager, introduced in OpenWrt 22.03. It uses nftables as its backend. luci-app-xray generates nftables rules and hooks into firewall4 to set up transparent proxy interception and mark-based routing.
+
+## System requirements
+
+luci-app-xray requires the following:
+
+- **OpenWrt 22.03 or later** with firewall4 and nftables enabled
+- `xray-core` package installed on the router
+- `dnsmasq` for DNS integration
+- `ca-bundle` for TLS certificate verification
+- `kmod-nft-tproxy` kernel module for transparent proxy support
+
+<Warning>
+  luci-app-xray does **not** support LEDE, OpenWrt prior to 22.03, or [Lean's OpenWrt fork](https://github.com/coolsnowwolf/lede), which ships with a variant of LuCI from OpenWrt 18.06. If you are on one of these platforms, consider Passwall or a similar project instead.
+</Warning>
+
+## Packages
+
+luci-app-xray is split into three separate packages. You can install only what you need.
+
+| Package | Description |
+|---|---|
+| `luci-app-xray` | Core package. Provides the main **Services → Xray** configuration UI, transparent proxy setup, DNS management, and all routing controls. |
+| `luci-app-xray-status` | Optional status page. Displays real-time Xray metrics and connection information using the Xray Metrics API. Depends on `wget`. |
+| `luci-app-xray-geodata` | Optional geodata viewer. Lets you browse and search the contents of `geoip.dat` and `geosite.dat` files. Depends on `xray-geodata`. |
+
+At a minimum you need `luci-app-xray`. Install the other two packages if you want the status page or geodata browser.
+
+## What luci-app-xray does not do
+
+- It does not manage the `xray-core` binary installation — you must install that separately via `opkg`.
+- It does not support sniffing in the main app (sniffing is deprecated and moved to the preview app; use FakeDNS instead).
+- It does not support global SOCKS/HTTP inbounds listening on `0.0.0.0` in the main app (these are deprecated and moved to the preview app).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Build luci-app-xray from source or generate installable `.ipk` packages using GitHub Actions.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Configure your first proxy server and get transparent proxying running in minutes.
+  </Card>
+</CardGroup>

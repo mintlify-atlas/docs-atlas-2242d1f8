@@ -1,0 +1,81 @@
+---
+title: "Bridge reverse proxy: expose LAN services remotely"
+description: "Use Xray's reverse proxy bridge to expose local LAN services through a remote VPS, bypassing NAT without requiring port forwarding on OpenWrt."
+---
+
+The bridge feature lets you expose a service running on your local network to the internet through a remote Xray server, without needing to open ports on your router or configure port forwarding. This is useful when your ISP does not provide a public IP address or uses CGNAT.
+
+## How it works
+
+The reverse proxy works with two roles: a **bridge** (your OpenWrt router) and a **portal** (your remote VPS running Xray).
+
+<Steps>
+  <Step title="Bridge connects outward">
+    Your router's Xray instance opens a connection to the portal server and registers itself as a bridge for a specific domain. This is an outbound connection from the router, so it works even behind strict NAT.
+  </Step>
+  <Step title="Portal receives external traffic">
+    External clients connect to the portal server using the bridge domain. The portal forwards that traffic inward through the established bridge connection.
+  </Step>
+  <Step title="Bridge delivers to local service">
+    The router receives the forwarded traffic and sends it to the local service at the configured `redirect` address and port.
+  </Step>
+</Steps>
+
+The generated Xray configuration creates:
+- An inbound tagged `bridge_inbound:{name}` with the bridge domain
+- A freedom outbound tagged `bridge_freedom_outbound:{name}` that redirects to the local `redirect` address
+- An upstream outbound tagged `bridge_upstream_outbound:{name}` that connects to the portal server
+- Routing rules: traffic matching the domain goes upstream; all other inbound traffic goes to the freedom (local) redirect
+
+## Configuration
+
+Bridge is configured using UCI sections of type `bridge`.
+
+| UCI option | Description |
+|---|---|
+| `domain` | The domain name for this bridge (e.g., `my-service.example.com`) |
+| `upstream` | UCI section name of the server entry pointing to the portal server |
+| `redirect` | Local `address:port` where traffic is delivered (e.g., `127.0.0.1:80`) |
+
+<Note>
+The `upstream` server entry must be a valid `servers` UCI section configured with the protocol and credentials that match your portal server. Any supported outbound protocol (VLESS, VMess, etc.) can be used.
+</Note>
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Expose a web server" icon="globe">
+    Publish a home web server to the internet through your VPS, without needing a public IP.
+  </Card>
+  <Card title="Access LAN services remotely" icon="house-laptop">
+    Reach a NAS, home automation system, or other LAN service from anywhere.
+  </Card>
+</CardGroup>
+
+## UCI example
+
+```text UCI
+# The portal server entry (remote VPS)
+config servers 'my_portal'
+    option protocol 'vless'
+    option server 'vps.example.com'
+    option server_port '443'
+    option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+    option vless_encryption 'none'
+    option vless_tls 'tls'
+    option vless_tls_host 'vps.example.com'
+    option transport 'ws'
+    option ws_path '/bridge'
+
+# The bridge section
+config bridge 'home_web'
+    option domain 'home.example.com'
+    option upstream 'my_portal'
+    option redirect '127.0.0.1:80'
+```
+
+With this configuration, external clients connecting to `home.example.com` on the portal server are transparently forwarded to the router's local HTTP server on port `80`.
+
+<Warning>
+The remote portal server must be configured with a matching Xray portal inbound for the same domain. Refer to the [Xray reverse proxy documentation](https://xtls.github.io/config/reverse.html) for the server-side configuration.
+</Warning>

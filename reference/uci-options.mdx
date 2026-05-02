@@ -1,0 +1,645 @@
+---
+title: "UCI configuration options reference"
+description: "Complete listing of every UCI option supported by luci-app-xray, organized by section type with types, defaults, and descriptions."
+---
+
+Every aspect of luci-app-xray's behavior is controlled through UCI configuration stored in `/etc/config/xray_core`. The file contains one `general` section and any number of typed sections (`servers`, `extra_inbound`, `manual_tproxy`, `bridge`, `fakedns`, `lan_hosts`, `fallback`). This page documents every supported option across all section types.
+
+<AccordionGroup>
+
+<Accordion title="general — global proxy settings">
+
+There is exactly one `general` section per config. It controls transparent proxy interfaces, DNS, routing policy, port assignments, and monitoring.
+
+**Transparent proxy**
+
+<ParamField path="transparent_proxy_enable" type="boolean" default="1">
+  Master switch for the transparent proxy. Set to `0` to disable all TProxy interception while leaving Xray running.
+</ParamField>
+
+<ParamField path="tproxy_ifaces_v4" type="string[]">
+  List of network interfaces whose IPv4 traffic is intercepted and redirected to TProxy. Typically `br-lan`.
+</ParamField>
+
+<ParamField path="tproxy_ifaces_v6" type="string[]">
+  List of network interfaces whose IPv6 traffic is intercepted and redirected to TProxy.
+</ParamField>
+
+<ParamField path="bypass_ifaces_v4" type="string[]">
+  List of interfaces whose IPv4 traffic bypasses TProxy entirely (accepted without marking).
+</ParamField>
+
+<ParamField path="bypass_ifaces_v6" type="string[]">
+  List of interfaces whose IPv6 traffic bypasses TProxy entirely.
+</ParamField>
+
+**Balancers**
+
+<ParamField path="tcp_balancer_v4" type="string[]">
+  Names of `servers` sections to include in the IPv4 TCP balancer. Traffic from `tproxy_ifaces_v4` is load-balanced across these servers.
+</ParamField>
+
+<ParamField path="udp_balancer_v4" type="string[]">
+  Names of `servers` sections for the IPv4 UDP balancer.
+</ParamField>
+
+<ParamField path="tcp_balancer_v6" type="string[]">
+  Names of `servers` sections for the IPv6 TCP balancer.
+</ParamField>
+
+<ParamField path="udp_balancer_v6" type="string[]">
+  Names of `servers` sections for the IPv6 UDP balancer.
+</ParamField>
+
+<ParamField path="general_balancer_strategy" type="string" default="random">
+  Load-balancing strategy applied to all built-in balancers. Accepted values: `random`, `roundRobin`, `leastPing`. `leastPing` requires `observatory` to be enabled.
+</ParamField>
+
+**GeoIP and domain routing**
+
+<ParamField path="geoip_direct_code_list" type="string[]">
+  GeoIP codes whose IPv4 destinations are routed directly (bypassing the proxy). Example: `cn`. Prefix with `ext:file:tag` to use a custom geoip database.
+</ParamField>
+
+<ParamField path="geoip_direct_code_list_v6" type="string[]">
+  GeoIP codes whose IPv6 destinations are routed directly.
+</ParamField>
+
+<ParamField path="blocked_domain_rules" type="string[]">
+  Domain rules (geosite tags or plain domains) that are sent to the blackhole outbound. Example: `geosite:category-ads`.
+</ParamField>
+
+<ParamField path="bypassed_domain_rules" type="string[]">
+  Domain rules that are routed directly without proxying. Example: `geosite:cn`.
+</ParamField>
+
+<ParamField path="forwarded_domain_rules" type="string[]">
+  Domain rules that are always forwarded through the proxy. Example: `geosite:geolocation-!cn`.
+</ParamField>
+
+**DNS**
+
+<ParamField path="fast_dns" type="string" default="223.5.5.5:53">
+  DNS server used for domains matched by `bypassed_domain_rules`. Should be a fast, local DNS resolver (e.g. your ISP's resolver).
+</ParamField>
+
+<ParamField path="secure_dns" type="string" default="8.8.8.8:53">
+  DNS server used for domains matched by `forwarded_domain_rules`. Queries are sent through the proxy.
+</ParamField>
+
+<ParamField path="default_dns" type="string" default="1.1.1.1:53">
+  Fallback DNS server for domains not matched by any rule.
+</ParamField>
+
+<ParamField path="dns_port" type="number" default="5300">
+  Base port for Xray's internal DNS inbound listeners. Additional listeners are opened on `dns_port + 1` through `dns_port + dns_count`.
+</ParamField>
+
+<ParamField path="dns_count" type="number" default="3">
+  Number of extra DNS inbound ports to open above `dns_port`.
+</ParamField>
+
+<ParamField path="dns_tcp_hijack" type="string">
+  IP address whose TCP port 53 traffic is hijacked and redirected to Xray's DNS server.
+</ParamField>
+
+<ParamField path="dns_udp_hijack" type="string">
+  IP address whose UDP port 53 traffic is hijacked and redirected to Xray's DNS server.
+</ParamField>
+
+<ParamField path="dnsmasq_integration_mode" type="string">
+  Controls how dnsmasq integrates with Xray DNS. `global` rewrites the global dnsmasq upstream. `per_instance` configures only the dnsmasq instances listed in `dnsmasq_instances`.
+</ParamField>
+
+<ParamField path="dnsmasq_instances" type="string[]">
+  When `dnsmasq_integration_mode` is `per_instance`, the list of dnsmasq UCI instance names to configure.
+</ParamField>
+
+<ParamField path="align_fast_dns_to_geoip_direct" type="boolean">
+  When enabled, fast DNS queries are aligned with the GeoIP direct code list so that DNS resolution for direct-routed IPs stays local.
+</ParamField>
+
+**Policy (connection timeouts)**
+
+<ParamField path="handshake" type="number" default="4">
+  Handshake timeout in seconds. Connections that do not complete the handshake within this time are dropped.
+</ParamField>
+
+<ParamField path="conn_idle" type="number" default="300">
+  Idle connection timeout in seconds.
+</ParamField>
+
+<ParamField path="uplink_only" type="number" default="2">
+  Time in seconds to keep a connection open after the downlink closes (uplink only remaining).
+</ParamField>
+
+<ParamField path="downlink_only" type="number" default="5">
+  Time in seconds to keep a connection open after the uplink closes (downlink only remaining).
+</ParamField>
+
+<ParamField path="buffer_size" type="number" default="4">
+  Internal buffer size in MB per connection.
+</ParamField>
+
+**Monitoring**
+
+<ParamField path="xray_api" type="boolean">
+  Enable Xray's gRPC management API on `127.0.0.1:8080`.
+</ParamField>
+
+<ParamField path="metrics_server_enable" type="boolean">
+  Enable the Prometheus-compatible metrics inbound.
+</ParamField>
+
+<ParamField path="metrics_server_port" type="number" default="18888">
+  Port for the metrics inbound listener.
+</ParamField>
+
+<ParamField path="observatory" type="boolean">
+  Enable background probing of outbound servers. Required for `leastPing` balancer strategy.
+</ParamField>
+
+<ParamField path="stats" type="boolean">
+  Enable traffic statistics collection.
+</ParamField>
+
+<ParamField path="access_log" type="boolean">
+  Write an access log for every proxied connection.
+</ParamField>
+
+<ParamField path="loglevel" type="string" default="warning">
+  Xray log verbosity. Accepted values: `warning`, `error`, `info`, `debug`.
+</ParamField>
+
+<ParamField path="dns_log" type="boolean">
+  Log DNS query results to the Xray log.
+</ParamField>
+
+**Routing**
+
+<ParamField path="routing_domain_strategy" type="string" default="AsIs">
+  Domain resolution strategy used during routing rule matching. Accepted values: `AsIs`, `UseIP`, `UseIPv4`, `UseIPv6`.
+</ParamField>
+
+<ParamField path="transparent_default_port_policy" type="string" default="forwarded">
+  Default handling for ports not explicitly listed in bypass or forward port lists. `forwarded` proxies all unmatched ports; `bypassed` passes them through directly.
+</ParamField>
+
+<ParamField path="wan_fw_tcp_ports" type="string[]">
+  TCP destination ports that are always forwarded through the proxy regardless of `transparent_default_port_policy`.
+</ParamField>
+
+<ParamField path="wan_fw_udp_ports" type="string[]">
+  UDP destination ports that are always forwarded through the proxy.
+</ParamField>
+
+<ParamField path="wan_bp_tcp_ports" type="string[]">
+  TCP destination ports that always bypass the proxy.
+</ParamField>
+
+<ParamField path="wan_bp_udp_ports" type="string[]">
+  UDP destination ports that always bypass the proxy.
+</ParamField>
+
+<ParamField path="wan_bp_ips" type="string[]">
+  Destination IP addresses or CIDR ranges that bypass the proxy. Accepts both IPv4 and IPv6.
+</ParamField>
+
+<ParamField path="wan_fw_ips" type="string[]">
+  Destination IP addresses or CIDR ranges that are always force-forwarded through the proxy.
+</ParamField>
+
+<ParamField path="direct_bittorrent" type="boolean">
+  Route BitTorrent traffic directly, bypassing the proxy.
+</ParamField>
+
+<ParamField path="uids_direct" type="string[]">
+  Linux user IDs whose outbound traffic bypasses TProxy entirely. Useful for excluding specific system services.
+</ParamField>
+
+<ParamField path="gids_direct" type="string[]">
+  Linux group IDs whose outbound traffic bypasses TProxy entirely.
+</ParamField>
+
+**Dynamic direct**
+
+Dynamic direct learns which destination IPs a connection used and caches them so subsequent connections to those IPs are sent directly, improving latency for connections that Xray ultimately routes directly.
+
+<ParamField path="dynamic_direct_tcp4" type="boolean">
+  Enable dynamic direct caching for IPv4 TCP connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_tcp6" type="boolean">
+  Enable dynamic direct caching for IPv6 TCP connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp4" type="boolean">
+  Enable dynamic direct caching for IPv4 UDP connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_udp6" type="boolean">
+  Enable dynamic direct caching for IPv6 UDP connections.
+</ParamField>
+
+<ParamField path="dynamic_direct_timeout" type="number" default="2233">
+  Seconds before a cached dynamic direct IP entry expires.
+</ParamField>
+
+**FakeDNS pool**
+
+<ParamField path="pool_v4" type="string" default="198.18.0.0/15">
+  IPv4 CIDR block used as the FakeDNS address pool. Connections to addresses in this range are intercepted by the FakeDNS inbounds.
+</ParamField>
+
+<ParamField path="pool_v6" type="string" default="fc00::/18">
+  IPv6 CIDR block used as the FakeDNS address pool.
+</ParamField>
+
+<ParamField path="tproxy_port_tcp_f4" type="number" default="1086">
+  TProxy port for IPv4 TCP traffic destined for the FakeDNS pool.
+</ParamField>
+
+<ParamField path="tproxy_port_tcp_f6" type="number" default="1087">
+  TProxy port for IPv6 TCP traffic destined for the FakeDNS pool.
+</ParamField>
+
+<ParamField path="tproxy_port_udp_f4" type="number" default="1088">
+  TProxy port for IPv4 UDP traffic destined for the FakeDNS pool.
+</ParamField>
+
+<ParamField path="tproxy_port_udp_f6" type="number" default="1089">
+  TProxy port for IPv6 UDP traffic destined for the FakeDNS pool.
+</ParamField>
+
+**TProxy ports**
+
+<ParamField path="tproxy_port_tcp_v4" type="number" default="1082">
+  TProxy listening port for IPv4 TCP traffic.
+</ParamField>
+
+<ParamField path="tproxy_port_tcp_v6" type="number" default="1083">
+  TProxy listening port for IPv6 TCP traffic.
+</ParamField>
+
+<ParamField path="tproxy_port_udp_v4" type="number" default="1084">
+  TProxy listening port for IPv4 UDP traffic.
+</ParamField>
+
+<ParamField path="tproxy_port_udp_v6" type="number" default="1085">
+  TProxy listening port for IPv6 UDP traffic.
+</ParamField>
+
+<ParamField path="socks_port" type="number" default="1080">
+  Port for the global SOCKS5 inbound.
+
+  <Warning>The global SOCKS inbound is deprecated as of 3.2.0 and will be removed in 4.0.0. Use an `extra_inbound` section instead.</Warning>
+</ParamField>
+
+<ParamField path="http_port" type="number" default="1081">
+  Port for the global HTTP proxy inbound.
+
+  <Warning>The global HTTP inbound is deprecated as of 3.2.0 and will be removed in 4.0.0. Use an `extra_inbound` section instead.</Warning>
+</ParamField>
+
+**Miscellaneous**
+
+<ParamField path="xray_bin" type="string" default="/usr/bin/xray">
+  Path to the Xray binary.
+</ParamField>
+
+<ParamField path="mark" type="number" default="255">
+  nftables packet mark value (`0xff`) applied to traffic that should bypass TProxy. Xray sets this mark on its own outbound packets so they are not re-intercepted.
+</ParamField>
+
+<ParamField path="fw4_counter" type="boolean">
+  Attach packet and byte counters to every nftables rule. Useful for debugging, but adds overhead.
+</ParamField>
+
+<ParamField path="ttl_override" type="number">
+  Replace the IPv4 TTL field with this value on intercepted packets. Combined with `ttl_hop_limit_match` to match specific TTL values before overriding.
+</ParamField>
+
+<ParamField path="hop_limit_override" type="number">
+  Replace the IPv6 Hop Limit field with this value on intercepted packets.
+</ParamField>
+
+<ParamField path="ttl_hop_limit_match" type="number">
+  Only apply TTL/hop limit override to packets whose TTL or Hop Limit equals this value.
+</ParamField>
+
+<ParamField path="ttl_override_bypass_ports" type="string[]">
+  TCP/UDP destination ports that are excluded from TTL/hop limit manipulation.
+</ParamField>
+
+<ParamField path="custom_configuration_hook" type="string">
+  A ucode function body that receives the generated Xray JSON configuration as its argument and returns a (possibly modified) configuration object. Evaluated at config generation time. Example: `return i => { i.log.loglevel = "debug"; return i; };`
+</ParamField>
+
+<ParamField path="custom_config" type="string">
+  Raw JSON string merged into the generated Xray configuration. Deprecated in favor of `custom_configuration_hook`.
+</ParamField>
+
+<ParamField path="blocked_to_loopback" type="boolean">
+  When set to `1`, the dnsmasq `bogus-nxdomain` entries for the blocked-domain loopback addresses (`127.127.127.127` and `100::6c62:636f:656b:2164`) are omitted, allowing those addresses to be resolved normally.
+</ParamField>
+
+**Web server (HTTPS inbound)**
+
+<ParamField path="web_server_enable" type="boolean">
+  Enable an HTTPS inbound that can front actual web services or act as a VLESS/Trojan entry point.
+</ParamField>
+
+<ParamField path="web_server_protocol" type="string">
+  Protocol for the HTTPS inbound. Accepted values: `vless`, `trojan`.
+</ParamField>
+
+<ParamField path="web_server_address" type="string">
+  Listening address for the web server inbound, e.g. `0.0.0.0:443`.
+</ParamField>
+
+<ParamField path="web_server_cert_file" type="string">
+  Path to the TLS certificate file (PEM format).
+</ParamField>
+
+<ParamField path="web_server_key_file" type="string">
+  Path to the TLS private key file (PEM format).
+</ParamField>
+
+</Accordion>
+
+<Accordion title="servers — outbound server definitions">
+
+You may define multiple `servers` sections. Each describes one upstream proxy server. The section name is used as the server identifier when referenced from balancers, `extra_inbound`, `fakedns`, and `dialer_proxy`.
+
+<ParamField path="protocol" type="string" required>
+  Outbound protocol. Accepted values: `vmess`, `vless`, `shadowsocks`, `trojan`, `http`, `socks`, `hysteria`.
+</ParamField>
+
+<ParamField path="server" type="string" required>
+  Hostname or IP address of the upstream server.
+</ParamField>
+
+<ParamField path="server_port" type="number | number[]">
+  Port or list of ports on the upstream server. When a list is provided, connections are distributed across the listed ports.
+</ParamField>
+
+<ParamField path="domain_strategy" type="string">
+  Domain resolution strategy for this outbound. Accepted values: `UseIP`, `UseIPv4`, `UseIPv6`, `AsIs`. Overrides the global `routing_domain_strategy` for this server.
+</ParamField>
+
+<ParamField path="domain_resolve_dns" type="string">
+  DNS server address used to resolve `server` before connecting, e.g. `8.8.8.8`.
+</ParamField>
+
+<ParamField path="domain_resolve_dns_method" type="string">
+  Transport method for `domain_resolve_dns`. Accepted values: `udp`, `tcp`, `doh`, `doq`, `local`.
+</ParamField>
+
+<ParamField path="domain_resolve_expect_ips" type="string[]">
+  GeoIP tags or CIDR ranges. If set, only DNS responses containing IPs that match this list are accepted for `server` resolution.
+</ParamField>
+
+<ParamField path="dialer_proxy" type="string">
+  Name of another `servers` section through which this outbound's connections are tunnelled (chained proxy).
+</ParamField>
+
+<ParamField path="transport" type="string">
+  Stream transport layer. Accepted values: `tcp`, `ws`, `grpc`, `h2`, `quic`, `mkcp`, `splithttp`, `httpupgrade`, `hysteria`. Additional transport-specific options appear when a transport is selected.
+</ParamField>
+
+<ParamField path="custom_config" type="string">
+  Raw JSON fragment merged into this outbound's configuration object. Use for protocol or transport options not exposed by the UI.
+</ParamField>
+
+<Note>
+  Protocol-specific options (UUID, password, encryption method, flow control, etc.) and transport-specific options (host, path, TLS settings, gRPC service name, etc.) vary by `protocol` and `transport` selection and are managed through the LuCI interface.
+</Note>
+
+</Accordion>
+
+<Accordion title="extra_inbound — additional inbound listeners">
+
+Each `extra_inbound` section opens an additional inbound listener with independent outbound routing. Use these to create per-device or per-application proxy ports.
+
+<ParamField path="inbound_type" type="string" required>
+  Inbound listener type. Accepted values: `http`, `socks5`, `tproxy_tcp`, `tproxy_udp`.
+</ParamField>
+
+<ParamField path="inbound_addr" type="string" default="0.0.0.0">
+  Address the inbound listens on.
+</ParamField>
+
+<ParamField path="inbound_port" type="number" required>
+  Port the inbound listens on.
+</ParamField>
+
+<ParamField path="inbound_username" type="string">
+  Username for HTTP/SOCKS5 authentication. Leave empty to disable authentication.
+</ParamField>
+
+<ParamField path="inbound_password" type="string">
+  Password for HTTP/SOCKS5 authentication.
+</ParamField>
+
+<ParamField path="specify_outbound" type="boolean">
+  When enabled, traffic through this inbound is routed to the servers listed in `destination` rather than the global balancers.
+</ParamField>
+
+<ParamField path="destination" type="string[]">
+  Names of `servers` sections used as outbounds for this inbound when `specify_outbound` is `1`.
+</ParamField>
+
+<ParamField path="balancer_strategy" type="string">
+  Load-balancing strategy for the `destination` list. Accepted values: `random`, `roundRobin`, `leastPing`.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="manual_tproxy — manual transparent proxy rules">
+
+`manual_tproxy` sections define static transparent proxy rules that intercept traffic from specific source IPs or port ranges before the regular routing logic applies.
+
+<ParamField path="source_addr" type="string">
+  Source IP address that triggers this rule.
+</ParamField>
+
+<ParamField path="source_port" type="string">
+  Source port range, e.g. `1024-65535`.
+</ParamField>
+
+<ParamField path="dest_addr" type="string">
+  Destination address matched by this rule.
+</ParamField>
+
+<ParamField path="dest_port" type="number">
+  Destination port matched by this rule.
+</ParamField>
+
+<ParamField path="force_forward_tcp" type="boolean">
+  Force TCP traffic matching this rule through the proxy server specified in `force_forward_server_tcp`.
+</ParamField>
+
+<ParamField path="force_forward_server_tcp" type="string">
+  Name of the `servers` section used as the TCP outbound for this rule.
+</ParamField>
+
+<ParamField path="force_forward_udp" type="boolean">
+  Force UDP traffic matching this rule through the proxy server specified in `force_forward_server_udp`.
+</ParamField>
+
+<ParamField path="force_forward_server_udp" type="string">
+  Name of the `servers` section used as the UDP outbound for this rule.
+</ParamField>
+
+<ParamField path="domain_names" type="string[]">
+  Domain names associated with the destination address. Used for dnsmasq `rebind-domain-ok` exemptions when `rebind_domain_ok` is enabled.
+</ParamField>
+
+<ParamField path="rebind_domain_ok" type="boolean">
+  When enabled, the domain names in `domain_names` are added to dnsmasq's `rebind-domain-ok` list, allowing RFC 1918 responses for those domains.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="bridge — reverse proxy (bridge) rules">
+
+`bridge` sections configure Xray's reverse proxy feature, useful for exposing local services through a remote server.
+
+<ParamField path="domain" type="string" required>
+  The domain name used to identify this bridge in the reverse proxy tunnel.
+</ParamField>
+
+<ParamField path="upstream" type="string" required>
+  Name of the `servers` section that connects to the remote portal.
+</ParamField>
+
+<ParamField path="redirect" type="string" required>
+  Local address and port to forward inbound bridge connections to, e.g. `127.0.0.1:80`.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="fakedns — FakeDNS pool configuration">
+
+Each `fakedns` section defines a FakeDNS domain pool and the outbound servers traffic for those domains should use. FakeDNS assigns fake IP addresses to matched domains so that TProxy can intercept the connections.
+
+<ParamField path="fake_dns_domain_names" type="string[]" required>
+  Domain rules (geosite tags or plain domains) that should receive fake IP addresses from this pool.
+</ParamField>
+
+<ParamField path="pool_v4" type="string">
+  IPv4 CIDR block for this pool. Overrides `general.pool_v4` for domains in this section.
+</ParamField>
+
+<ParamField path="pool_v6" type="string">
+  IPv6 CIDR block for this pool. Overrides `general.pool_v6`.
+</ParamField>
+
+<ParamField path="fake_dns_forward_server_tcp" type="string[]">
+  Names of `servers` sections used for TCP connections to domains matched by this FakeDNS pool.
+</ParamField>
+
+<ParamField path="fake_dns_forward_server_udp" type="string[]">
+  Names of `servers` sections used for UDP connections to domains matched by this FakeDNS pool.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="lan_hosts — per-device access control">
+
+Each `lan_hosts` section applies a per-device access control policy identified by MAC address.
+
+<ParamField path="macaddr" type="string" required>
+  MAC address of the LAN device, e.g. `aa:bb:cc:dd:ee:ff`.
+</ParamField>
+
+<ParamField path="alias" type="string">
+  Human-readable name for the device, displayed in the LuCI interface.
+</ParamField>
+
+<ParamField path="access_control_strategy_v4" type="string">
+  IPv4 traffic handling for this device. Accepted values: `tproxy` (intercept), `bypass` (pass through), `forward` (redirect to a specific `extra_inbound`).
+</ParamField>
+
+<ParamField path="access_control_strategy_v6" type="string">
+  IPv6 traffic handling for this device. Accepted values: `tproxy`, `bypass`, `forward`.
+</ParamField>
+
+<ParamField path="access_control_forward_tcp_v4" type="string">
+  Name of the `extra_inbound` section to which this device's IPv4 TCP traffic is forwarded when `access_control_strategy_v4` is `forward`.
+</ParamField>
+
+<ParamField path="access_control_forward_udp_v4" type="string">
+  Name of the `extra_inbound` section to which this device's IPv4 UDP traffic is forwarded.
+</ParamField>
+
+<ParamField path="access_control_forward_tcp_v6" type="string">
+  Name of the `extra_inbound` section to which this device's IPv6 TCP traffic is forwarded.
+</ParamField>
+
+<ParamField path="access_control_forward_udp_v6" type="string">
+  Name of the `extra_inbound` section to which this device's IPv6 UDP traffic is forwarded.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="fallback — web server fallback rules">
+
+`fallback` sections configure fallback destinations for the HTTPS web server inbound (VLESS/Trojan). When a connection does not match the main proxy protocol, it is forwarded to the matching fallback.
+
+<ParamField path="dest" type="string" required>
+  Destination address and port for this fallback, e.g. `127.0.0.1:80`.
+</ParamField>
+
+<ParamField path="alpn" type="string">
+  ALPN value to match, e.g. `http/1.1` or `h2`. Leave empty to match all ALPN values.
+</ParamField>
+
+<ParamField path="name" type="string">
+  SNI (Server Name Indication) value to match. Leave empty to match all SNI values.
+</ParamField>
+
+<ParamField path="xver" type="number">
+  PROXY protocol version to prepend when forwarding. Accepted values: `0` (disabled), `1`, `2`.
+</ParamField>
+
+<ParamField path="path" type="string">
+  HTTP path prefix to match for this fallback.
+</ParamField>
+
+</Accordion>
+
+</AccordionGroup>
+
+## Minimal configuration example
+
+The following is a complete, working `/etc/config/xray_core` configuration using a single VMess server over WebSocket.
+
+```uci
+config general
+    option transparent_proxy_enable '1'
+    option xray_bin '/usr/bin/xray'
+    list tproxy_ifaces_v4 'br-lan'
+    list tproxy_ifaces_v6 'br-lan'
+    list tcp_balancer_v4 'my_server'
+    list udp_balancer_v4 'my_server'
+    list tcp_balancer_v6 'my_server'
+    list udp_balancer_v6 'my_server'
+    list geoip_direct_code_list 'cn'
+    list geoip_direct_code_list_v6 'cn'
+    list bypassed_domain_rules 'geosite:cn'
+    list forwarded_domain_rules 'geosite:geolocation-!cn'
+    list blocked_domain_rules 'geosite:category-ads'
+    option fast_dns '223.5.5.5:53'
+    option secure_dns '8.8.8.8:53'
+    option default_dns '1.1.1.1:53'
+    option dns_port '5300'
+    option loglevel 'warning'
+    option mark '255'
+
+config servers 'my_server'
+    option protocol 'vmess'
+    option server 'example.com'
+    option server_port '443'
+    option transport 'ws'
+```

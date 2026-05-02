@@ -1,0 +1,205 @@
+---
+title: "Outbound proxy protocols supported by luci-app-xray"
+description: "Reference for all outbound protocols in luci-app-xray: VMess, VLESS, Shadowsocks, Trojan, Hysteria, SOCKS, and HTTP, with UCI configuration examples."
+---
+
+luci-app-xray supports seven outbound protocols. Each protocol maps to a UCI section of type `servers`. The fields you configure depend on the protocol you choose; this page documents every relevant field and shows UCI examples for the most commonly used combinations.
+
+## VMess
+
+VMess is the original V2Ray protocol. It uses UUID-based authentication and supports AEAD encryption when the alter ID is set to `0`.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port (integer, or list for multi-port) |
+| `password` | UUID for authentication |
+| `alter_id` | Set to `0` to use AEAD encryption (recommended) |
+| `vmess_security` | Encryption method (e.g., `auto`, `aes-128-gcm`, `chacha20-poly1305`) |
+| `transport` | Transport layer (see [Transport](/features/transport)) |
+| `vmess_tls` | TLS mode: `none`, `tls` |
+
+<Note>
+`alter_id` values greater than `0` use legacy MD5 authentication, which is deprecated. Always use `0` for new deployments.
+</Note>
+
+## VLESS
+
+VLESS is a lightweight modern protocol without built-in encryption. It relies on TLS or REALITY for security and supports the `xtls-rprx-vision` flow for XTLS Vision performance gains.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port |
+| `password` | UUID for authentication |
+| `vless_encryption` | Always `none` |
+| `vless_tls` | TLS mode: `none`, `tls`, or `reality` |
+| `vless_flow_tls` | Flow when using TLS (e.g., `xtls-rprx-vision`, or `none`) |
+| `vless_flow_reality` | Flow when using REALITY (e.g., `xtls-rprx-vision`) |
+
+REALITY is a TLS-masquerading technology that makes proxy traffic appear identical to the target website's TLS handshake. See [Transport](/features/transport) for the full list of REALITY fields.
+
+## Shadowsocks
+
+Shadowsocks is a widely supported encrypted proxy protocol. It does not use TLS — encryption is handled by the chosen cipher method.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port |
+| `password` | Encryption password |
+| `shadowsocks_security` | Cipher method (e.g., `chacha20-ietf-poly1305`, `aes-128-gcm`, `2022-blake3-aes-256-gcm`) |
+| `shadowsocks_udp_over_tcp` | Set to `1` to tunnel UDP over TCP |
+
+<Tip>
+The `2022-blake3-*` ciphers (Shadowsocks 2022) provide improved security and replay protection. Use them when your server supports them.
+</Tip>
+
+## Trojan
+
+Trojan disguises proxy traffic as ordinary HTTPS by always requiring TLS. The password is sent as part of the connection header.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port (typically `443`) |
+| `password` | Authentication password |
+| `trojan_tls` | Always `tls` |
+| `trojan_tls_host` | SNI / server name for the TLS handshake |
+
+## Hysteria
+
+Hysteria is a UDP-based protocol built on QUIC. It is designed for high-throughput connections on lossy networks. The transport is always `hysteria` (a special QUIC variant) and bandwidth limits are configured as part of the transport.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port |
+| `password` | Authentication password |
+| `transport` | Must be `hysteria` |
+| `hysteria_up_mbps` | Upload bandwidth limit in Mbps |
+| `hysteria_down_mbps` | Download bandwidth limit in Mbps |
+| `hysteria_udphop_port` | Port range for UDP hopping (e.g., `20000-50000`) |
+| `hysteria_udphop_interval` | Interval between port hops in seconds (default: `30`) |
+
+<Note>
+Hysteria uses protocol version 2 internally (`version: 2`). Only one port is used from `server_port` for the initial connection.
+</Note>
+
+## SOCKS
+
+SOCKS5 is a simple proxy protocol. Authentication is optional — if both `username` and `password` are set, authentication is required; otherwise the server is accessed without credentials.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port |
+| `username` | SOCKS5 username (optional) |
+| `password` | SOCKS5 password (optional, required if username is set) |
+
+## HTTP
+
+HTTP proxy behaves identically to SOCKS in terms of authentication rules. It tunnels traffic using the `CONNECT` method.
+
+| UCI option | Description |
+|---|---|
+| `server` | Remote server hostname or IP address |
+| `server_port` | Remote port |
+| `username` | HTTP proxy username (optional) |
+| `password` | HTTP proxy password (optional, required if username is set) |
+
+## Common options
+
+### Chaining outbounds with `dialer_proxy`
+
+Set `dialer_proxy` to the UCI section name of another server to route the outbound connection through that server first. This creates a proxy chain without needing separate routing rules.
+
+```text UCI example: chained outbound
+config servers 'my_relay'
+    option protocol 'socks'
+    option server '127.0.0.1'
+    option server_port '10808'
+
+config servers 'my_server'
+    option protocol 'vmess'
+    option server 'example.com'
+    option server_port '443'
+    option dialer_proxy 'my_relay'
+```
+
+### Overriding with `custom_config`
+
+Set `custom_config` to a raw JSON object to merge additional fields into the generated outbound configuration. This is useful for accessing Xray options not yet exposed in the LuCI interface.
+
+## UCI examples
+
+<Tabs>
+  <Tab title="VMess + WebSocket + TLS">
+    ```text UCI
+    config servers 'vmess_ws_tls'
+        option protocol 'vmess'
+        option server 'example.com'
+        option server_port '443'
+        option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+        option alter_id '0'
+        option vmess_security 'auto'
+        option transport 'ws'
+        option ws_path '/ws'
+        option ws_host 'example.com'
+        option vmess_tls 'tls'
+        option vmess_tls_host 'example.com'
+    ```
+  </Tab>
+  <Tab title="VLESS + REALITY">
+    ```text UCI
+    config servers 'vless_reality'
+        option protocol 'vless'
+        option server '1.2.3.4'
+        option server_port '443'
+        option password 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+        option vless_encryption 'none'
+        option vless_tls 'reality'
+        option vless_flow_reality 'xtls-rprx-vision'
+        option transport 'tcp'
+        option vless_reality_fingerprint 'chrome'
+        option vless_reality_server_name 'www.microsoft.com'
+        option vless_reality_public_key 'your-public-key-here'
+        option vless_reality_short_id 'abcd1234'
+    ```
+  </Tab>
+  <Tab title="Shadowsocks 2022">
+    ```text UCI
+    config servers 'ss2022'
+        option protocol 'shadowsocks'
+        option server 'example.com'
+        option server_port '8388'
+        option password 'base64-encoded-key'
+        option shadowsocks_security '2022-blake3-aes-256-gcm'
+    ```
+  </Tab>
+  <Tab title="Trojan">
+    ```text UCI
+    config servers 'trojan_tls'
+        option protocol 'trojan'
+        option server 'example.com'
+        option server_port '443'
+        option password 'your-password'
+        option trojan_tls 'tls'
+        option trojan_tls_host 'example.com'
+    ```
+  </Tab>
+  <Tab title="Hysteria">
+    ```text UCI
+    config servers 'hysteria2'
+        option protocol 'hysteria'
+        option server 'example.com'
+        option server_port '443'
+        option password 'your-password'
+        option transport 'hysteria'
+        option hysteria_up_mbps '100'
+        option hysteria_down_mbps '500'
+        option hysteria_tls 'tls'
+        option hysteria_tls_host 'example.com'
+    ```
+  </Tab>
+</Tabs>
